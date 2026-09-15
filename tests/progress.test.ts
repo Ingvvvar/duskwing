@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { LEVEL_1 } from '../src/game/levels';
 import type { ProgressStorage } from '../src/game/progress';
-import { EMPTY_PROGRESS, loadProgress, recordRun, saveProgress } from '../src/game/progress';
+import {
+  EMPTY_PROGRESS,
+  isLevelUnlocked,
+  loadProgress,
+  recordRun,
+  saveProgress,
+} from '../src/game/progress';
 
 /** Хранилище в памяти: тот же порт, что даст адаптер localStorage в фазе 4. */
 function memoryStorage(initial: string | null = null): ProgressStorage {
@@ -56,5 +62,20 @@ describe('прогресс', () => {
 
     expect(afterWeakRun.bestScores['1']).toBe(12);
     expect(afterWeakRun.clearedLevels).toEqual([LEVEL_1.id]);
+  });
+
+  it('первый уровень открыт всегда, следующий — после прохождения предыдущего', () => {
+    expect(isLevelUnlocked(EMPTY_PROGRESS, 1)).toBe(true);
+    expect(isLevelUnlocked(EMPTY_PROGRESS, 2)).toBe(false);
+
+    const afterFail = recordRun(EMPTY_PROGRESS, LEVEL_1.id, LEVEL_1.target - 1, LEVEL_1.target);
+
+    expect(afterFail.clearedLevels).toEqual([]);
+    expect(isLevelUnlocked(afterFail, 2)).toBe(false);
+
+    const afterClear = recordRun(EMPTY_PROGRESS, LEVEL_1.id, LEVEL_1.target, LEVEL_1.target);
+
+    expect(isLevelUnlocked(afterClear, 2)).toBe(true);
+    expect(isLevelUnlocked(afterClear, 3)).toBe(false);
   });
 });

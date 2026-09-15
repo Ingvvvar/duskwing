@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { FLYABLE_CENTER, GROUND_TOP, STEP_MS } from '../src/game/constants';
+import { FLYABLE_CENTER, GROUND_TOP, MAX_FRAME_MS, STEP_MS } from '../src/game/constants';
+import { Game } from '../src/game/Game';
 import { LEVEL_1 } from '../src/game/levels';
 import { mulberry32 } from '../src/game/rng';
 import type { LevelConfig } from '../src/game/types';
@@ -154,5 +155,41 @@ describe('интерполяция', () => {
 
       previous = state.birdY;
     }
+  });
+});
+
+describe('шаг', () => {
+  it('накопление за один вызов клампится', () => {
+    const afterMinute = started(LEVEL_1, mulberry32(41));
+    const afterClamp = started(LEVEL_1, mulberry32(41));
+
+    // Вкладка провисела в фоне минуту. Минуту досчитывать нельзя: это и
+    // подвешивает страницу, и убивает птицу, пока её никто не видел.
+    afterMinute.step(60_000);
+    afterClamp.step(MAX_FRAME_MS);
+
+    expect(afterMinute.state).toEqual(afterClamp.state);
+    expect(afterMinute.state.elapsedMs).toBeLessThan(MAX_FRAME_MS + STEP_MS);
+  });
+
+  it('нечисловой и неположительный шаг игнорируется', () => {
+    const game = started(LEVEL_1, mulberry32(43));
+    const before = game.state;
+
+    for (const dtMs of [0, -16, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      game.step(dtMs);
+    }
+
+    expect(game.state).toEqual(before);
+  });
+
+  it('до первого тапа шаг ничего не двигает', () => {
+    const game = new Game(LEVEL_1, mulberry32(47));
+    const before = game.state;
+
+    game.step(1000);
+
+    expect(game.state).toEqual(before);
+    expect(game.state.phase).toBe('ready');
   });
 });
