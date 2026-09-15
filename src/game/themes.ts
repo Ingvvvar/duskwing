@@ -18,7 +18,7 @@ export const DUSK: Theme = {
   weather: { kind: 'none', count: 0, speed: 0 },
   ground: { base: '#10152F', top: '#2A2350' },
   foreground: { kind: 'none', blur: 0 },
-  grade: { saturation: 1.04, brightness: 1, tint: '#FFE8C8', vignette: 0.28 },
+  grade: { saturation: 1.04, brightness: 1, tint: '#FFE8C8', vignette: 0.18 },
   accent: '#E8DCC0',
 };
 
