@@ -2,17 +2,24 @@ import { Application, Container, Graphics, UPDATE_PRIORITY } from 'pixi.js';
 
 import { GROUND_TOP, MAX_FRAME_MS, STEP_SECONDS, WORLD_HEIGHT, WORLD_WIDTH } from '../../game/constants';
 import type { GameState, LevelConfig, Renderer, Theme } from '../../game/types';
-import { PARALLAX } from '../parallax';
+import { PARALLAX, WEATHER_PARALLAX } from '../parallax';
 import { createBird } from './entities/Bird';
 import { PipePool } from './entities/Pipes';
 import { CelestialLayer } from './layers/Celestial';
+import { ForegroundLayer } from './layers/Foreground';
+import { GradeLayer } from './layers/Grade';
 import { GroundLayer } from './layers/Ground';
+import { HazeLayer } from './layers/Haze';
 import { RidgeLayer } from './layers/Ridges';
 import { SkyLayer } from './layers/Sky';
+import { WeatherLayer } from './layers/Weather';
 
 /** Цвет птицы: в `Theme` его нет, тема задаёт только акцент труб. */
 const BIRD_COLOR = 0xf05d5e;
 const LETTERBOX = 0x05060e;
+
+/** Доля скорости уровня, с которой фон ползёт до первого тапа. */
+const READY_PACE = 0.25;
 
 /**
  * Вертикальная раскладка гребней. В ТЗ её нет: дальний гребень выше и мельче,
@@ -61,7 +68,11 @@ export class PixiRenderer implements Renderer {
   readonly #celestial = new CelestialLayer();
   readonly #ridgeFar = new RidgeLayer('ridge-far');
   readonly #ridgeNear = new RidgeLayer('ridge-near');
+  readonly #haze = new HazeLayer();
+  readonly #weather = new WeatherLayer();
   readonly #ground = new GroundLayer();
+  readonly #foreground = new ForegroundLayer();
+  readonly #grade = new GradeLayer();
 
   #app: Application | null = null;
   #world: Container | null = null;
@@ -73,6 +84,9 @@ export class PixiRenderer implements Renderer {
    * здесь, а не в `GameState`.
    */
   #scrollX = 0;
+
+  /** Вид погоды текущей темы: от него зависит её параллакс. */
+  #weatherKind: Theme['weather']['kind'] = 'none';
 
   constructor(config: LevelConfig) {
     this.#config = config;
@@ -106,6 +120,8 @@ export class PixiRenderer implements Renderer {
       this.#celestial.view,
       this.#ridgeFar.view,
       this.#ridgeNear.view,
+      this.#haze.view,
+      this.#weather.view,
     );
 
     // Игровой слой всегда выше слоёв фона и никогда не получает фильтров.
@@ -113,9 +129,18 @@ export class PixiRenderer implements Renderer {
 
     gameplay.addChild(pipes.container, bird);
 
-    // Земля вне background: между ними лежит игровой слой, одним контейнером
-    // их не собрать.
-    world.addChild(background, gameplay, this.#ground.view);
+    // Земля и передний план соседствуют по z-порядку, между ними ничего нет,
+    // поэтому они идут одним контейнером: тот же экземпляр ColorMatrixFilter
+    // красит их вместе с фоном, а проходов фильтра за кадр остаётся два.
+    // Без общего грейда земля отваливается от фона по цвету на тёмных темах.
+    const near = new Container({ label: 'near' });
+
+    near.addChild(this.#ground.view, this.#foreground.view);
+
+    background.filters = [this.#grade.filter];
+    near.filters = [this.#grade.filter];
+
+    world.addChild(background, gameplay, near, this.#grade.vignette);
 
     // Маска по логической сетке. Нужна из-за труб: труба рождается при
     // x = WORLD_WIDTH и своей шириной заходит за правый край мира, то есть
@@ -149,8 +174,13 @@ export class PixiRenderer implements Renderer {
     this.#celestial.setTheme(theme);
     this.#ridgeFar.setTheme(app.renderer, theme.ridgeFar, RIDGE_FAR);
     this.#ridgeNear.setTheme(app.renderer, theme.ridgeNear, RIDGE_NEAR);
+    this.#haze.setTheme(theme);
+    this.#weather.setTheme(theme);
     this.#ground.setTheme(theme);
+    this.#foreground.setTheme(theme);
+    this.#grade.setTheme(theme);
     this.#pipes?.setColor(theme.accent);
+    this.#weatherKind = theme.weather.kind;
   }
 
   draw(state: GameState, dtMs: number): void {
@@ -169,16 +199,27 @@ export class PixiRenderer implements Renderer {
     // alpha → 1 — текущее. С alpha трубы ушли бы на тик вперёд птицы.
     pipes.sync(state.pipes, (1 - state.alpha) * this.#config.pipeSpeed * STEP_SECONDS);
 
-    // Фон стоит, пока стоит мир: до первого тапа и после смерти.
-    if (state.phase === 'play' && Number.isFinite(dtMs) && dtMs > 0) {
-      this.#scrollX += (this.#config.pipeSpeed * Math.min(dtMs, MAX_FRAME_MS)) / 1000;
-    }
+    // До первого тапа фон ползёт на четверти скорости — мир ещё не запущен,
+    // но и не мёртв. На `over` всё замирает: пауза после смерти работает
+    // именно тем, что останавливается всё сразу.
+    const pace = state.phase === 'play' ? 1 : state.phase === 'ready' ? READY_PACE : 0;
+    const stepMs = Number.isFinite(dtMs) && dtMs > 0 ? Math.min(dtMs, MAX_FRAME_MS) : 0;
+    const advance = (this.#config.pipeSpeed * stepMs * pace) / 1000;
+
+    this.#scrollX += advance;
 
     // Слой 0 с параллаксом 0 не прокручивается вовсе.
     this.#celestial.scroll(this.#scrollX * PARALLAX.celestial);
     this.#ridgeFar.scroll(this.#scrollX * PARALLAX.ridgeFar);
     this.#ridgeNear.scroll(this.#scrollX * PARALLAX.ridgeNear);
+    this.#haze.scroll(this.#scrollX * PARALLAX.haze);
     this.#ground.scroll(this.#scrollX * PARALLAX.ground);
+    this.#foreground.scroll(this.#scrollX * PARALLAX.foreground);
+
+    const weatherParallax =
+      this.#weatherKind === 'none' ? 0 : WEATHER_PARALLAX[this.#weatherKind];
+
+    this.#weather.update((stepMs * pace) / 1000, advance * weatherParallax);
   }
 
   resize(width: number, height: number): void {
@@ -240,7 +281,11 @@ export class PixiRenderer implements Renderer {
     this.#celestial.destroy();
     this.#ridgeFar.destroy();
     this.#ridgeNear.destroy();
+    this.#haze.destroy();
+    this.#weather.destroy();
     this.#ground.destroy();
+    this.#foreground.destroy();
+    this.#grade.destroy();
     this.#pipes?.destroy();
 
     // removeView: false — канвасом владеет React, забирать его из DOM нельзя.

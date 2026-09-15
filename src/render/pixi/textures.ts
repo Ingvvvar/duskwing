@@ -1,6 +1,6 @@
 import { Graphics, Rectangle, Texture, type Renderer } from 'pixi.js';
 
-import { GROUND_HEIGHT, WORLD_HEIGHT } from '../../game/constants';
+import { FOREGROUND_BAND_HEIGHT, GROUND_HEIGHT, WORLD_HEIGHT, WORLD_WIDTH } from '../../game/constants';
 import { mulberry32 } from '../../game/rng';
 import type { Theme } from '../../game/types';
 
@@ -128,6 +128,8 @@ export interface RidgeOptions {
 }
 
 const GROUND_SEED = 20260916;
+const HAZE_SEED = 20260917;
+const FOREGROUND_SEED = 20260918;
 
 /** Множитель частоты второй октавы относительно первой. */
 const DETAIL_FREQUENCY = 4;
@@ -223,6 +225,140 @@ export function createGroundTexture(base: string, top: string): Texture {
 
     x += 7 + Math.round(random() * 17);
   }
+
+  return Texture.from(context.canvas);
+}
+
+/**
+ * Дымка: мягкие пятна под blendMode screen.
+ *
+ * Высота плитки равна высоте слоя намеренно: пятна заворачиваются только по
+ * горизонтали, и при вертикальном повторе их обрезанные края читаются как
+ *горизонтальные полосы поперёк всего экрана. По горизонтали слой прокручивается, там
+ * заворот нужен; по вертикали повтора быть не должно.
+ */
+export function createHazeTexture(color: string, tileHeight: number): Texture {
+  const tileWidth = 256;
+  const context = createCanvas(tileWidth, tileHeight);
+  const random = mulberry32(HAZE_SEED);
+
+  for (let index = 0; index < 7; index += 1) {
+    const x = random() * tileWidth;
+    const y = random() * tileHeight;
+    const radius = 40 + random() * 60;
+
+    // Пятно у края дорисовывается с противоположной стороны — иначе на
+    // повторе плитки виден шов.
+    for (const offset of [0, -tileWidth, tileWidth]) {
+      const gradient = context.createRadialGradient(x + offset, y, 0, x + offset, y, radius);
+
+      gradient.addColorStop(0, rgba(color, 0.5));
+      gradient.addColorStop(1, rgba(color, 0));
+      context.fillStyle = gradient;
+      context.fillRect(x + offset - radius, y - radius, radius * 2, radius * 2);
+    }
+  }
+
+  return Texture.from(context.canvas);
+}
+
+/**
+ * Частица погоды. Все виды рисуются белым: цвет задаётся тинтом на самой
+ * частице, поэтому текстура одна на контейнер, как того требует
+ * ParticleContainer.
+ */
+export function createParticleTexture(kind: Theme['weather']['kind']): Texture {
+  if (kind === 'rain') {
+    const context = createCanvas(2, 16);
+    const gradient = context.createLinearGradient(0, 0, 0, 16);
+
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 1)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 2, 16);
+
+    return Texture.from(context.canvas);
+  }
+
+  const size = kind === 'dust' ? 4 : 10;
+  const context = createCanvas(size, size);
+  const radius = size / 2;
+  const gradient = context.createRadialGradient(radius, radius, 0, radius, radius, radius);
+
+  gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  gradient.addColorStop(kind === 'fireflies' ? 0.3 : 0.6, 'rgba(255, 255, 255, 0.7)');
+  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, size, size);
+
+  return Texture.from(context.canvas);
+}
+
+/**
+ * Передний план: силуэты в полосе `FOREGROUND_BAND_HEIGHT` над линией земли.
+ */
+export function createForegroundTexture(
+  kind: Theme['foreground']['kind'],
+  blur: number,
+  color: string,
+): Texture {
+  const tileWidth = 256;
+  const context = createCanvas(tileWidth, FOREGROUND_BAND_HEIGHT);
+  const random = mulberry32(FOREGROUND_SEED);
+
+  // Размытие запекается в текстуру, а не вешается рантайм-фильтром: силуэты
+  // статичны, размывать их покадрово не за что, а бюджет ТЗ — не больше двух
+  // активных фильтров, и оба уже заняты грейдом фона и ближних слоёв.
+  // Не заменять на BlurFilter «как в ТЗ»: это осознанный размен.
+  context.filter = `blur(${String(blur)}px)`;
+  context.fillStyle = color;
+
+  if (kind === 'grass') {
+    for (let x = -8; x < tileWidth + 8; x += 3 + random() * 5) {
+      const height = 18 + random() * (FOREGROUND_BAND_HEIGHT - 24);
+      const lean = (random() - 0.5) * 10;
+
+      context.beginPath();
+      context.moveTo(x, FOREGROUND_BAND_HEIGHT);
+      context.quadraticCurveTo(x + lean, FOREGROUND_BAND_HEIGHT - height * 0.6, x + lean * 2, FOREGROUND_BAND_HEIGHT - height);
+      context.lineTo(x + 2.5, FOREGROUND_BAND_HEIGHT);
+      context.closePath();
+      context.fill();
+    }
+  } else if (kind === 'streaks') {
+    for (let x = -40; x < tileWidth + 40; x += 14 + random() * 22) {
+      context.beginPath();
+      context.moveTo(x, FOREGROUND_BAND_HEIGHT);
+      context.lineTo(x + 26, FOREGROUND_BAND_HEIGHT - 40 - random() * 20);
+      context.lineTo(x + 32, FOREGROUND_BAND_HEIGHT - 40 - random() * 20);
+      context.lineTo(x + 8, FOREGROUND_BAND_HEIGHT);
+      context.closePath();
+      context.fill();
+    }
+  } else if (kind === 'rocks') {
+    for (let x = -20; x < tileWidth + 20; x += 18 + random() * 30) {
+      const radius = 8 + random() * 16;
+
+      context.beginPath();
+      context.ellipse(x, FOREGROUND_BAND_HEIGHT, radius, radius * 0.7, 0, Math.PI, 0);
+      context.fill();
+    }
+  }
+
+  return Texture.from(context.canvas);
+}
+
+/** Виньетка под blendMode multiply: белая в центре, тёмная по краям. */
+export function createVignetteTexture(strength: number): Texture {
+  const context = createCanvas(WORLD_WIDTH, WORLD_HEIGHT);
+  const half = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
+  const gradient = context.createRadialGradient(half.x, half.y, WORLD_WIDTH * 0.25, half.x, half.y, WORLD_HEIGHT * 0.72);
+  const edge = Math.round((1 - Math.min(1, Math.max(0, strength))) * 255);
+
+  gradient.addColorStop(0, '#ffffff');
+  gradient.addColorStop(1, `rgb(${String(edge)}, ${String(edge)}, ${String(edge)})`);
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
   return Texture.from(context.canvas);
 }
