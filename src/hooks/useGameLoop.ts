@@ -4,11 +4,22 @@ import type { RefObject } from 'react';
 import { Game } from '../game/Game';
 import { LEVEL_1 } from '../game/levels';
 import { mulberry32 } from '../game/rng';
+import { DEBUG_THEME, DUSK } from '../game/themes';
 import type { Theme } from '../game/types';
 import { PixiRenderer } from '../render/pixi/PixiRenderer';
 
-/** Тем ещё нет: они приезжают в фазе 3. */
-const PHASE_TWO_THEME: Theme = {};
+/**
+ * Отладочная тема доступна только в деве. В проде `import.meta.env.DEV`
+ * схлопывается в `false`, ветка становится мёртвой, и `DEBUG_THEME` выпадает
+ * из бандла вместе с ней.
+ */
+function readTheme(): Theme {
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('theme') === 'debug') {
+    return DEBUG_THEME;
+  }
+
+  return DUSK;
+}
 
 /**
  * Сид раскладки. `?seed=` имеет приоритет: без него баг, найденный на
@@ -119,7 +130,7 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>): num
 
       const created = new PixiRenderer(LEVEL_1);
 
-      await created.init(canvas, PHASE_TWO_THEME);
+      await created.init(canvas, readTheme());
 
       if (cancelled) {
         // Размонтировались, пока шёл await: на канвас ничего не вешаем.

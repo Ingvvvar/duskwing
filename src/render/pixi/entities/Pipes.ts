@@ -1,6 +1,6 @@
-import { Container, Graphics, type GraphicsContext } from 'pixi.js';
+import { Container, Graphics, GraphicsContext } from 'pixi.js';
 
-import { GROUND_TOP } from '../../../game/constants';
+import { GROUND_TOP, PIPE_WIDTH } from '../../../game/constants';
 import type { Pipe } from '../../../game/types';
 
 interface PipeView {
@@ -24,12 +24,38 @@ interface PipeView {
 export class PipePool {
   readonly container = new Container({ label: 'pipes' });
 
-  readonly #context: GraphicsContext;
   readonly #active = new Map<number, PipeView>();
   readonly #free: PipeView[] = [];
 
-  constructor(context: GraphicsContext) {
-    this.#context = context;
+  #context: GraphicsContext;
+
+  constructor(color: string) {
+    this.#context = PipePool.#buildContext(color);
+  }
+
+  static #buildContext(color: string): GraphicsContext {
+    return new GraphicsContext().rect(0, 0, PIPE_WIDTH, 1).fill(color);
+  }
+
+  /**
+   * Цвет труб задаётся темой (`Theme.accent`), поэтому при смене темы общий
+   * контекст пересобирается, а прежний уничтожается. Разделяемый контекст не
+   * принадлежит ни одному `Graphics` и сам по себе не умрёт.
+   */
+  setColor(color: string): void {
+    const next = PipePool.#buildContext(color);
+
+    for (const view of [...this.#active.values(), ...this.#free]) {
+      view.top.context = next;
+      view.bottom.context = next;
+    }
+
+    this.#context.destroy();
+    this.#context = next;
+  }
+
+  destroy(): void {
+    this.#context.destroy();
   }
 
   /**

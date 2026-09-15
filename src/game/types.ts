@@ -8,14 +8,20 @@
  * `no-restricted-imports` в `eslint.config.js`.
  */
 
-/* eslint-disable @typescript-eslint/no-empty-object-type --
-   Theme заполняется в фазе 3. До тех пор он намеренно пустой: интерфейс
-   Renderer должен ссылаться на настоящий тип уже сейчас. */
-
-/** Визуальная тема уровня — данные, не код. TODO: фаза 3. */
-export interface Theme {}
-
-/* eslint-enable @typescript-eslint/no-empty-object-type */
+/** Визуальная тема уровня — данные, не код (TASK.md, раздел 4). */
+export interface Theme {
+  id: string;
+  sky: [string, string, string, string];         // стопы градиента сверху вниз
+  celestial: { kind: 'sun' | 'moon' | 'none'; x: number; y: number; glow: string; stars: number };
+  ridgeFar: { color: string; amplitude: number; roughness: number; seed: number };
+  ridgeNear: { color: string; amplitude: number; roughness: number; seed: number };
+  haze: { color: string; alpha: number } | null;
+  weather: { kind: 'none' | 'rain' | 'snow' | 'fireflies' | 'dust'; count: number; speed: number };
+  ground: { base: string; top: string };
+  foreground: { kind: 'none' | 'grass' | 'streaks' | 'rocks'; blur: number };
+  grade: { saturation: number; brightness: number; tint: string; vignette: number };
+  accent: string;                                 // цвет труб — задаётся темой
+}
 
 /** Состояние автомата игры. Цель уровня сюда не входит: её сверяет UI. */
 export type GamePhase = 'ready' | 'play' | 'over';
