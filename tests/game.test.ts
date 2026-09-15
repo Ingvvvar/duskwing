@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { FLYABLE_CENTER, GROUND_TOP, MAX_FRAME_MS, STEP_MS } from '../src/game/constants';
 import { Game } from '../src/game/Game';
 import { LEVEL_1 } from '../src/game/levels';
+import { resolveOutcome } from '../src/game/progress';
 import { mulberry32 } from '../src/game/rng';
 import type { LevelConfig } from '../src/game/types';
 import { autopilot, gapCentersFrom, run, started } from './support/simulate';
@@ -191,5 +192,24 @@ describe('шаг', () => {
 
     expect(game.state).toEqual(before);
     expect(game.state.phase).toBe('ready');
+  });
+});
+
+describe('цель и смерть одновременно', () => {
+  it('состояние со score >= target и phase === over достижимо и разрешимо', () => {
+    // Просвет широкий, цель — одно очко: птица гарантированно наберёт цель,
+    // а потом, оставшись без флапов, упадёт. Смерть не должна ни обнулять
+    // счёт, ни отменять достигнутую цель.
+    const easy: LevelConfig = { ...LEVEL_1, target: 1, pipeGap: 400 };
+    const game = started(easy, mulberry32(5));
+
+    run(game, { frames: 900, control: autopilot });
+    expect(game.state.score).toBeGreaterThanOrEqual(easy.target);
+
+    run(game, { frames: 400 });
+
+    expect(game.state.phase).toBe('over');
+    expect(game.state.score).toBeGreaterThanOrEqual(easy.target);
+    expect(resolveOutcome(game.state.score, easy.target, game.state.phase)).toBe('cleared');
   });
 });

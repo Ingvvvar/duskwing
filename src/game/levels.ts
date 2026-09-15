@@ -24,3 +24,23 @@ export const LEVEL_1: LevelConfig = {
 
 /** Уровни 2–5 приезжают в фазе 5, каждый одним объектом и без правок кода. */
 export const LEVELS: readonly LevelConfig[] = [LEVEL_1];
+
+/**
+ * Реестр всех пяти уровней из раздела 3 TASK.md — только id и имя.
+ *
+ * Нужен выбору уровня: карточки показываются для всех пяти, а конфиги 2–5
+ * приезжают в фазе 5. Наличие имени здесь не означает, что уровень играбелен;
+ * это решает `findLevel`.
+ */
+export const LEVEL_ROSTER: readonly { readonly id: number; readonly name: string }[] = [
+  { id: 1, name: 'Сумерки' },
+  { id: 2, name: 'Ночь' },
+  { id: 3, name: 'Гроза' },
+  { id: 4, name: 'Каньон' },
+  { id: 5, name: 'Пустота' },
+];
+
+/** Конфиг уровня, если он уже реализован. */
+export function findLevel(id: number): LevelConfig | undefined {
+  return LEVELS.find((level) => level.id === id);
+}

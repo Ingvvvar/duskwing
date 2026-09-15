@@ -30,15 +30,171 @@ body {
   touch-action: none;
 }
 
-.score {
+/* --- оболочка ---------------------------------------------------------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: max(env(safe-area-inset-top, 0px), 24px) 24px 24px;
+  color: #f4efe6;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: linear-gradient(180deg, rgb(5 6 14 / 55%), rgb(5 6 14 / 78%));
+  text-align: center;
+}
+
+.overlay--center {
+  align-items: center;
+  justify-content: center;
+}
+
+/* Экран смерти не гасит сцену: следующая попытка начинается отсюда же. */
+.overlay--quiet {
+  background: rgb(5 6 14 / 46%);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(32px, 9vw, 56px);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.title--small {
+  font-size: clamp(22px, 6vw, 32px);
+}
+
+.subtitle {
+  max-width: 24ch;
+  margin: 0;
+  color: #c8bfd6;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.subtitle--faint {
+  color: #8d86a3;
+  font-size: 13px;
+}
+
+.result {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.result__best {
+  color: #c8bfd6;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.button {
+  min-width: 180px;
+  padding: 13px 26px;
+  border: 0;
+  border-radius: 999px;
+  background: #e8dcc0;
+  color: #151b3d;
+  font: 600 16px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  cursor: pointer;
+}
+
+.button--quiet {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgb(244 239 230 / 28%);
+  color: #f4efe6;
+}
+
+/* --- выбор уровня ------------------------------------------------------ */
+
+.levels {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, 100%);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.level {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: rgb(244 239 230 / 8%);
+  color: #f4efe6;
+  font: 500 15px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  text-align: left;
+}
+
+.level--open {
+  background: rgb(232 220 192 / 16%);
+  cursor: pointer;
+}
+
+.level--locked,
+.level--soon {
+  color: #7f7996;
+}
+
+.level__index {
+  color: #8d86a3;
+  font-variant-numeric: tabular-nums;
+}
+
+.level__note {
+  color: #c8bfd6;
+  font-size: 13px;
+}
+
+.level--locked .level__note,
+.level--soon .level__note {
+  color: #6f6a85;
+}
+
+/* --- HUD --------------------------------------------------------------- */
+
+.hud {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 16px);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  /* HUD ничего не перехватывает: тап обязан дойти до канваса. */
+  pointer-events: none;
+  user-select: none;
+}
+
+.hud__score {
   color: #f4efe6;
   font: 600 32px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 2px 6px rgb(5 6 14 / 60%);
-  pointer-events: none;
-  user-select: none;
+}
+
+.hud__target {
+  color: #c8bfd6;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.hud__hint {
+  margin: 0;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgb(5 6 14 / 55%);
+  color: #e8dcc0;
+  font-size: 13px;
 }

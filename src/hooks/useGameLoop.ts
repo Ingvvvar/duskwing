@@ -1,12 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
 import { Game } from '../game/Game';
-import { LEVEL_1 } from '../game/levels';
+import { findLevel, LEVEL_1 } from '../game/levels';
+import type { RunOutcome } from '../game/progress';
+import { recordAttempt, recordRun, resolveOutcome, shouldShowHint } from '../game/progress';
 import { mulberry32 } from '../game/rng';
+import type { Rng } from '../game/rng';
 import { DEBUG_THEME, DUSK } from '../game/themes';
-import type { Theme } from '../game/types';
+import type { GamePhase, LevelConfig, Theme } from '../game/types';
 import { PixiRenderer } from '../render/pixi/PixiRenderer';
+import type { ProgressApi } from './useProgress';
+
+export type Screen = 'menu' | 'levels' | 'playing';
+
+export interface Session {
+  readonly screen: Screen;
+  readonly outcome: RunOutcome;
+  readonly level: LevelConfig;
+  readonly score: number;
+  readonly showHint: boolean;
+  /** Свойства-функции, не методы: их передают в пропсы, `this` им не нужен. */
+  readonly openMenu: () => void;
+  readonly openLevels: () => void;
+  readonly startLevel: (id: number) => void;
+  readonly restart: () => void;
+}
 
 /**
  * Отладочная тема доступна только в деве. В проде `import.meta.env.DEV`
@@ -33,32 +52,6 @@ function readSeed(): number {
   return Number.isFinite(parsed) ? parsed >>> 0 : Date.now() >>> 0;
 }
 
-/** Временный ввод фазы 2. В фазе 4 переедет в UI. */
-function attachInput(canvas: HTMLCanvasElement, tap: () => void): () => void {
-  const onPointerDown = (event: PointerEvent): void => {
-    event.preventDefault();
-    tap();
-  };
-
-  const onKeyDown = (event: KeyboardEvent): void => {
-    // Автоповтор при зажатом пробеле — это не намерение игрока.
-    if (event.code !== 'Space' || event.repeat) {
-      return;
-    }
-
-    event.preventDefault();
-    tap();
-  };
-
-  canvas.addEventListener('pointerdown', onPointerDown);
-  window.addEventListener('keydown', onKeyDown);
-
-  return () => {
-    canvas.removeEventListener('pointerdown', onPointerDown);
-    window.removeEventListener('keydown', onKeyDown);
-  };
-}
-
 /**
  * Наблюдаем за родителем канваса, а не за самим канвасом: `autoDensity`
  * пишет размеры инлайн-стилем прямо в канвас, и наблюдение за ним самим
@@ -69,6 +62,7 @@ function observeSize(canvas: HTMLCanvasElement, renderer: PixiRenderer): () => v
 
   const apply = (): void => {
     const box = target.getBoundingClientRect();
+
     renderer.resize(box.width, box.height);
   };
 
@@ -82,13 +76,137 @@ function observeSize(canvas: HTMLCanvasElement, renderer: PixiRenderer): () => v
   };
 }
 
-/**
- * Поднимает рендер, крутит цикл и отдаёт счёт. Возвращаемое число меняется
- * только когда меняется счёт: `setState` внутри игрового цикла запрещён.
- */
-export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>): number {
+export function useGameLoop(
+  canvasRef: RefObject<HTMLCanvasElement | null>,
+  progressApi: ProgressApi,
+): Session {
+  const [screen, setScreen] = useState<Screen>('menu');
+  const [level, setLevel] = useState<LevelConfig>(LEVEL_1);
   const [score, setScore] = useState(0);
+  const [phase, setPhase] = useState<GamePhase>('ready');
+
   const chainRef = useRef<Promise<void> | null>(null);
+  const gameRef = useRef<Game | null>(null);
+  const rngRef = useRef<Rng | null>(null);
+  const levelRef = useRef<LevelConfig>(LEVEL_1);
+  const screenRef = useRef<Screen>('menu');
+  /** Цель набрана: мир заморожен до ухода с экрана «уровень пройден». */
+  const frozenRef = useRef(false);
+  /** Итог попытки уже записан в прогресс — второй раз не писать. */
+  const recordedRef = useRef(false);
+  const tapRef = useRef<() => void>(() => undefined);
+
+  const { update } = progressApi;
+
+  const beginAttempt = useCallback(
+    (config: LevelConfig): void => {
+      const rng = rngRef.current;
+
+      if (rng === null) {
+        return;
+      }
+
+      // Один поток rng на сессию: каждая попытка получает свою раскладку, но
+      // вся сессия воспроизводится от одного числа в ?seed=.
+      gameRef.current = new Game(config, rng);
+      frozenRef.current = false;
+      recordedRef.current = false;
+      setScore(0);
+      setPhase('ready');
+      update((previous) => recordAttempt(previous, config.id));
+    },
+    [update],
+  );
+
+  const startLevel = useCallback(
+    (id: number): void => {
+      const config = findLevel(id);
+
+      if (config === undefined) {
+        return;
+      }
+
+      levelRef.current = config;
+      screenRef.current = 'playing';
+      setLevel(config);
+      setScreen('playing');
+      beginAttempt(config);
+    },
+    [beginAttempt],
+  );
+
+  /**
+   * Рестарт после смерти. Новая попытка сразу стартует взмахом: иначе одного
+   * нажатия хватает лишь на возврат в `ready`, и до полёта нужно два — а ТЗ
+   * требует управляемую попытку меньше чем за 300 мс от смерти.
+   *
+   * Заход на уровень из меню взмаха не делает: там игрок сам выбирает момент.
+   */
+  const restart = useCallback((): void => {
+    beginAttempt(levelRef.current);
+    gameRef.current?.flap();
+  }, [beginAttempt]);
+
+  const leave = useCallback(
+    (next: Screen): void => {
+      screenRef.current = next;
+      setScreen(next);
+      // Уходя с уровня, ставим мир в спокойное состояние: за меню не должна
+      // висеть замершая мёртвая птица.
+      const rng = rngRef.current;
+
+      if (rng !== null) {
+        gameRef.current = new Game(levelRef.current, rng);
+        frozenRef.current = false;
+        recordedRef.current = true;
+        setScore(0);
+        setPhase('ready');
+      }
+    },
+    [],
+  );
+
+  const openMenu = useCallback((): void => {
+    leave('menu');
+  }, [leave]);
+
+  const openLevels = useCallback((): void => {
+    leave('levels');
+  }, [leave]);
+
+  // Ввод маршрутизируется по экрану. Меню и выбор уровня обрабатывают клики
+  // своими кнопками, канвас там молчит.
+  //
+  // Обработчик кладётся в реф после рендера, а не во время: слушатели висят
+  // всю жизнь эффекта, им нужна свежая версия, но запись в реф во время
+  // рендера ломает конкурентный рендеринг (react-hooks/refs).
+  useEffect(() => {
+    tapRef.current = (): void => {
+      if (screenRef.current !== 'playing') {
+        return;
+      }
+
+      if (frozenRef.current) {
+        openLevels();
+
+        return;
+      }
+
+      const game = gameRef.current;
+
+      if (game === null) {
+        return;
+      }
+
+      if (game.state.phase === 'over') {
+        restart();
+
+        return;
+      }
+
+      game.flap();
+    };
+  }, [openLevels, restart]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -100,54 +218,96 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>): num
     let cancelled = false;
     let renderer: PixiRenderer | null = null;
     let stopFrames: (() => void) | null = null;
-    let detachInput: (() => void) | null = null;
     let detachResize: (() => void) | null = null;
 
     const seed = readSeed();
-    const rng = mulberry32(seed);
+
+    rngRef.current = mulberry32(seed);
+    gameRef.current = new Game(levelRef.current, rngRef.current);
 
     if (import.meta.env.DEV) {
       console.info(`[duskwing] seed=${seed}`);
     }
 
-    // Один поток rng на сессию: каждая попытка получает свою раскладку, но
-    // вся сессия воспроизводится от одного числа в ?seed=.
-    let game = new Game(LEVEL_1, rng);
-    let lastScore = 0;
-
-    const tap = (): void => {
-      if (game.state.phase === 'over') {
-        game = new Game(LEVEL_1, rng);
-      } else {
-        game.flap();
-      }
+    const onPointerDown = (event: PointerEvent): void => {
+      event.preventDefault();
+      tapRef.current();
     };
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      // Автоповтор при зажатом пробеле — это не намерение игрока.
+      if (event.code !== 'Space' || event.repeat) {
+        return;
+      }
+
+      event.preventDefault();
+      tapRef.current();
+    };
+
+    let lastScore = 0;
+    let lastPhase: GamePhase = 'ready';
 
     const boot = async (): Promise<void> => {
       if (cancelled) {
         return;
       }
 
-      const created = new PixiRenderer(LEVEL_1);
+      const created = new PixiRenderer(levelRef.current);
 
       await created.init(canvas, readTheme());
 
       if (cancelled) {
         // Размонтировались, пока шёл await: на канвас ничего не вешаем.
         created.destroy();
+
         return;
       }
 
       renderer = created;
       detachResize = observeSize(canvas, created);
-      detachInput = attachInput(canvas, tap);
-      stopFrames = created.onFrame((dtMs) => {
-        game.step(dtMs);
-        created.draw(game.state, dtMs);
+      canvas.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('keydown', onKeyDown);
 
-        if (game.state.score !== lastScore) {
-          lastScore = game.state.score;
-          setScore(lastScore);
+      stopFrames = created.onFrame((dtMs) => {
+        const game = gameRef.current;
+
+        if (game === null) {
+          return;
+        }
+
+        const frozen = frozenRef.current;
+
+        if (!frozen) {
+          game.step(dtMs);
+        }
+
+        // Заморозка полная: нулевой dtMs останавливает и прокрутку фона, и
+        // погоду, которые считаются в рендере, а не в логике.
+        created.draw(game.state, frozen ? 0 : dtMs);
+
+        const state = game.state;
+
+        if (state.score !== lastScore) {
+          lastScore = state.score;
+          setScore(state.score);
+        }
+
+        if (state.phase !== lastPhase) {
+          lastPhase = state.phase;
+          setPhase(state.phase);
+        }
+
+        const config = levelRef.current;
+        const reachedTarget = state.score >= config.target;
+
+        if (!frozen && reachedTarget) {
+          // Геймплей на экране «уровень пройден» не идёт (TASK.md, раздел 4).
+          frozenRef.current = true;
+        }
+
+        if (!recordedRef.current && (reachedTarget || state.phase === 'over')) {
+          recordedRef.current = true;
+          update((previous) => recordRun(previous, config.id, state.score, config.target));
         }
       });
     };
@@ -169,15 +329,26 @@ export function useGameLoop(canvasRef: RefObject<HTMLCanvasElement | null>): num
     return () => {
       cancelled = true;
       stopFrames?.();
-      detachInput?.();
       detachResize?.();
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
 
       chainRef.current = (chainRef.current ?? Promise.resolve()).then(() => {
         renderer?.destroy();
         renderer = null;
       });
     };
-  }, [canvasRef]);
+  }, [canvasRef, update]);
 
-  return score;
+  return {
+    screen,
+    outcome: resolveOutcome(score, level.target, phase),
+    level,
+    score,
+    showHint: shouldShowHint(progressApi.progress, level.id),
+    openMenu,
+    openLevels,
+    startLevel,
+    restart,
+  };
 }
