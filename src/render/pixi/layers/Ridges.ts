@@ -8,6 +8,10 @@ export interface RidgeLayout {
   /** Линия, вокруг которой гуляет силуэт. Отсчитывается от верха мира. */
   readonly baselineY: number;
   readonly tileWidth: number;
+  /** Доля второй октавы: превращает регулярную волну в рельеф. */
+  readonly detail: number;
+  /** Задаётся явно там, где кромка не должна зависеть от DPR дисплея. */
+  readonly resolution?: number;
 }
 
 /**
@@ -41,6 +45,8 @@ export class RidgeLayer {
       seed: config.seed,
       tileWidth: layout.tileWidth,
       tileHeight,
+      detail: layout.detail,
+      ...(layout.resolution === undefined ? {} : { resolution: layout.resolution }),
     });
 
     this.#texture?.destroy(true);

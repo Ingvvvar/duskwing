@@ -3,11 +3,20 @@ import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { WORLD_WIDTH } from '../../../game/constants';
 import { mulberry32 } from '../../../game/rng';
 import type { Theme } from '../../../game/types';
-import { createGlowTexture } from '../textures';
+import { createGlowTexture, dimToLuminance } from '../textures';
 
 const DISC_RADIUS = 20;
 const GLOW_RADIUS = 96;
 const GLOW_PEAK_ALPHA = 0.16;
+
+/**
+ * Относительная яркость диска светила.
+ *
+ * Гасится не ради метрики: труба идёт на 0.72, и диск близкой яркости
+ * съедает её кромку в момент прохода перед светилом. Перцентиль фона этого
+ * не ловит — эффект локальный и короткий. Ореол не трогаем, он и так тусклый.
+ */
+const DISC_LUMINANCE = 0.35;
 const STAR_SEED = 20260916;
 
 /**
@@ -90,7 +99,9 @@ export class CelestialLayer {
         }),
       );
       copy.addChild(
-        new Graphics().circle(celestial.x, celestial.y, DISC_RADIUS).fill(celestial.glow),
+        new Graphics()
+          .circle(celestial.x, celestial.y, DISC_RADIUS)
+          .fill(dimToLuminance(celestial.glow, DISC_LUMINANCE)),
       );
     }
 

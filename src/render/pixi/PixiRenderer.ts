@@ -18,8 +18,15 @@ const LETTERBOX = 0x05060e;
  * Вертикальная раскладка гребней. В ТЗ её нет: дальний гребень выше и мельче,
  * ближний ниже и крупнее, оба залиты вниз до земли.
  */
-const RIDGE_FAR = { baselineY: GROUND_TOP - 120, tileWidth: 512 } as const;
-const RIDGE_NEAR = { baselineY: GROUND_TOP - 40, tileWidth: 384 } as const;
+const RIDGE_FAR = { baselineY: GROUND_TOP - 120, tileWidth: 512, detail: 0 } as const;
+
+/**
+ * Ближний гребень: вторая октава превращает регулярную волну в рельеф, а
+ * явное разрешение 2 снимает зависимость кромки от DPR дисплея — по умолчанию
+ * generateTexture берёт renderer.resolution, и на экране без ретины кромка
+ * вышла бы мягкой. Дальнему мягкость к месту, он остаётся на умолчании.
+ */
+const RIDGE_NEAR = { baselineY: GROUND_TOP - 40, tileWidth: 384, detail: 0.22, resolution: 2 } as const;
 
 interface DebugGlobal {
   __duskwingPixiInstances?: number;
