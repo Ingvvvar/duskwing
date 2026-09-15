@@ -43,9 +43,17 @@ export default tseslint.config(
     languageOptions: { globals: globals.browser },
   },
 
+  // Правила хуков — на весь src: хуки живут и в .ts (src/hooks), иначе
+  // exhaustive-deps их не видит. react-refresh — только на .tsx, он про
+  // экспорт компонентов.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    extends: [reactHooks.configs.flat['recommended-latest']],
+  },
+
   {
     files: ['src/**/*.tsx'],
-    extends: [reactHooks.configs.flat['recommended-latest'], reactRefresh.configs.vite],
+    extends: [reactRefresh.configs.vite],
   },
 
   {
