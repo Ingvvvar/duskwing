@@ -110,7 +110,7 @@ export interface LevelConfig {
   pipeSpeed: number;
   pipeGap: number;
   pipeSpacing: number;
-  gapDrift: number;         // максимальный разброс просвета от центра, px
+  gapDrift: number;         // предел разброса: и от центра лётной зоны, и между соседними просветами, px
   runwayMs: number;         // пауза до первой трубы
   ramp: { speedPerPipe: number; gapPerPipe: number; minGap: number } | null;
   mechanics: {

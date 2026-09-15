@@ -26,6 +26,19 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
+/**
+ * Источники недетерминизма. Раскладка уровня должна воспроизводиться по сиду,
+ * а время в симуляцию приходит единственным путём — параметром `step`.
+ * Случайность в самих тестах и в `tests/support` допустима: запрет только на
+ * `src/game/**`.
+ */
+const FORBIDDEN_GLOBALS: readonly { readonly name: string; readonly pattern: RegExp }[] = [
+  { name: 'Math.random', pattern: /\bMath\s*\.\s*random\b/ },
+  { name: 'Date.now', pattern: /\bDate\s*\.\s*now\b/ },
+  { name: 'performance.now', pattern: /\bperformance\s*\.\s*now\b/ },
+  { name: 'new Date', pattern: /\bnew\s+Date\b/ },
+];
+
 function collectSources(dir: string): string[] {
   const files: string[] = [];
 
@@ -68,6 +81,12 @@ function forbiddenImports(source: string): string[] {
   return found;
 }
 
+function forbiddenGlobals(source: string): string[] {
+  const clean = stripComments(source);
+
+  return FORBIDDEN_GLOBALS.filter((entry) => entry.pattern.test(clean)).map((entry) => entry.name);
+}
+
 describe('граница src/game', () => {
   const files = collectSources(GAME_DIR);
 
@@ -82,6 +101,17 @@ describe('граница src/game', () => {
         imports: forbiddenImports(readFileSync(file, 'utf8')),
       }))
       .filter((entry) => entry.imports.length > 0);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('не обращается к Math.random и к часам', () => {
+    const offenders = files
+      .map((file) => ({
+        file: relative(ROOT, file),
+        used: forbiddenGlobals(readFileSync(file, 'utf8')),
+      }))
+      .filter((entry) => entry.used.length > 0);
 
     expect(offenders).toEqual([]);
   });
