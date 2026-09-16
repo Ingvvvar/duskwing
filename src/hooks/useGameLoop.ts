@@ -5,12 +5,13 @@ import { MAX_FRAME_MS } from '../game/constants';
 import { Game } from '../game/Game';
 import { ENDLESS, findLevel, LEVEL_1 } from '../game/levels';
 import type { RunOutcome } from '../game/progress';
-import { recordAttempt, recordRun, resolveOutcome, shouldShowHint } from '../game/progress';
+import { recordAttempt, recordRun, resolveOutcome, setMuted, shouldShowHint } from '../game/progress';
 import { mulberry32 } from '../game/rng';
 import type { Rng } from '../game/rng';
 import { DEBUG_THEME, DUSK, endlessTheme, THEMES } from '../game/themes';
 import type { GamePhase, LevelConfig, Theme } from '../game/types';
 import { PixiRenderer } from '../render/pixi/PixiRenderer';
+import { Sound } from '../audio/sound';
 import type { ProgressApi } from './useProgress';
 
 export type Screen = 'menu' | 'levels' | 'playing';
@@ -27,6 +28,7 @@ export type Screen = 'menu' | 'levels' | 'playing';
 const DEATH_INPUT_WINDOW_MS = 200;
 
 export interface Session {
+  readonly muted: boolean;
   readonly screen: Screen;
   readonly outcome: RunOutcome;
   readonly level: LevelConfig;
@@ -37,6 +39,7 @@ export interface Session {
   readonly openLevels: () => void;
   readonly startLevel: (id: number) => void;
   readonly restart: () => void;
+  readonly toggleMuted: () => void;
 }
 
 /** Длительность кроссфейда тем на экране «уровень пройден» (TASK.md). */
@@ -136,8 +139,31 @@ export function useGameLoop(
   const tapRef = useRef<() => void>(() => undefined);
   const restartRef = useRef<() => void>(() => undefined);
   const rendererRef = useRef<PixiRenderer | null>(null);
+  const soundRef = useRef<Sound | null>(null);
 
   const { update } = progressApi;
+  const muted = progressApi.progress.muted;
+
+  /**
+   * Зеркало мьюта в рефе. Класть `muted` в зависимости монтирующего эффекта
+   * нельзя: переключение звука пересоздавало бы весь рендер.
+   */
+  const mutedRef = useRef(muted);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+    soundRef.current?.setMuted(muted);
+  }, [muted]);
+
+  const toggleMuted = useCallback((): void => {
+    update((previous) => {
+      const next = setMuted(previous, !previous.muted);
+
+      soundRef.current?.setMuted(next.muted);
+
+      return next;
+    });
+  }, [update]);
 
   const beginAttempt = useCallback(
     (config: LevelConfig): void => {
@@ -260,6 +286,9 @@ export function useGameLoop(
       }
 
       game.flap();
+      // Первый звук всегда приходит отсюда — то есть из обработчика жеста,
+      // где браузер и разрешает создать AudioContext.
+      soundRef.current?.play('flap');
     };
 
     restartRef.current = restart;
@@ -276,6 +305,18 @@ export function useGameLoop(
     let renderer: PixiRenderer | null = null;
     let stopFrames: (() => void) | null = null;
     let detachResize: (() => void) | null = null;
+
+    const sound = new Sound();
+
+    sound.setMuted(mutedRef.current);
+    soundRef.current = sound;
+
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const applyMotion = (): void => {
+      rendererRef.current?.setReducedMotion(motion.matches);
+    };
+
+    motion.addEventListener('change', applyMotion);
 
     const seed = readSeed();
 
@@ -322,6 +363,7 @@ export function useGameLoop(
 
       renderer = created;
       rendererRef.current = created;
+      created.setReducedMotion(motion.matches);
       // Уровень мог быть выбран, пока шёл await init.
       created.setLevel(levelRef.current);
       detachResize = observeSize(canvas, created);
@@ -351,6 +393,8 @@ export function useGameLoop(
           lastScore = state.score;
           setScore(state.score);
 
+          sound.play('score');
+
           // Бесконечный режим: палитра и грейд перетекают по счёту. Смена
           // мгновенная, кроссфейд здесь был бы шагами вместо перетекания.
           if (levelRef.current.id === ENDLESS.id && readThemeOverride() === null) {
@@ -362,6 +406,7 @@ export function useGameLoop(
           if (state.phase === 'over') {
             deathWindowRef.current = DEATH_INPUT_WINDOW_MS;
             bufferedRef.current = false;
+            sound.play('hit');
           }
 
           lastPhase = state.phase;
@@ -383,6 +428,7 @@ export function useGameLoop(
         if (!frozen && reachedTarget) {
           // Геймплей на экране «уровень пройден» не идёт (TASK.md, раздел 4).
           frozenRef.current = true;
+          sound.play('clear');
 
           // Переход к теме следующего уровня играется здесь: мир заморожен,
           // и 700 мс кроссфейда никому не мешают.
@@ -416,6 +462,9 @@ export function useGameLoop(
 
     return () => {
       cancelled = true;
+      motion.removeEventListener('change', applyMotion);
+      sound.destroy();
+      soundRef.current = null;
       stopFrames?.();
       detachResize?.();
       canvas.removeEventListener('pointerdown', onPointerDown);
@@ -431,6 +480,7 @@ export function useGameLoop(
   }, [canvasRef, update]);
 
   return {
+    muted,
     screen,
     outcome: resolveOutcome(score, level.target, phase),
     level,
@@ -440,5 +490,6 @@ export function useGameLoop(
     openLevels,
     startLevel,
     restart,
+    toggleMuted,
   };
 }

@@ -1,0 +1,59 @@
+name: deploy
+
+# Выкладка на GitHub Pages. Сборка проходит только через ворота проверок:
+# на Pages не должно попадать то, что не прошло typecheck, lint и тесты.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Одна выкладка за раз; лишние в очереди отменяются.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 LTS. На машине разработчика стоит 25.x — нечётная ветка, на
+      # которой vitest ругается EBADENGINE; на CI берём поддерживаемую.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Проверки
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run test
+
+      # base в vite.config.ts уже равен /duskwing/ — под адрес Pages.
+      - name: Сборка
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

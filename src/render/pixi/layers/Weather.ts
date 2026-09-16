@@ -31,10 +31,12 @@ export class WeatherLayer {
   #drops: Drop[] = [];
   #texture: Texture | null = null;
 
-  setTheme(theme: Theme): void {
+  setTheme(theme: Theme, reducedMotion: boolean): void {
     this.#teardown();
 
-    if (theme.weather.kind === 'none' || theme.weather.count <= 0) {
+    // Контракт prefers-reduced-motion: частицы не создаются вовсе, а не
+    // просто останавливаются — иначе они продолжают есть память и кадры.
+    if (reducedMotion || theme.weather.kind === 'none' || theme.weather.count <= 0) {
       return;
     }
 

@@ -32,9 +32,10 @@ export class LightningLayer {
     this.view.visible = false;
   }
 
-  setTheme(theme: Theme): void {
-    // Молния живёт там, где идёт дождь.
-    this.#enabled = theme.weather.kind === 'rain';
+  setTheme(theme: Theme, reducedMotion: boolean): void {
+    // Молния живёт там, где идёт дождь. При prefers-reduced-motion вспышек
+    // нет вовсе — по контракту читаемости.
+    this.#enabled = !reducedMotion && theme.weather.kind === 'rain';
     this.#remainingMs = 0;
     this.view.alpha = 0;
     this.view.visible = false;

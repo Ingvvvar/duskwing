@@ -68,15 +68,15 @@ export class Scene {
     this.near.filters = [this.grade.filter];
   }
 
-  setTheme(renderer: Renderer, theme: Theme, level: LevelConfig): void {
+  setTheme(renderer: Renderer, theme: Theme, level: LevelConfig, reducedMotion: boolean): void {
     this.#sky.setTheme(theme);
     this.#celestial.setTheme(theme);
     this.#ridgeFar.setTheme(renderer, theme.ridgeFar, RIDGE_FAR);
     this.#ridgeNear.setTheme(renderer, theme.ridgeNear, RIDGE_NEAR);
     this.#haze.setTheme(theme);
     this.#wind.setTheme(theme, level.mechanics.airflow);
-    this.#weather.setTheme(theme);
-    this.#lightning.setTheme(theme);
+    this.#weather.setTheme(theme, reducedMotion);
+    this.#lightning.setTheme(theme, reducedMotion);
     this.#ground.setTheme(theme);
     this.#foreground.setTheme(theme);
     this.#grade(theme);

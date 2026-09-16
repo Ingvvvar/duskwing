@@ -21,11 +21,18 @@ export interface Progress {
   readonly clearedLevels: readonly number[];
   /** Сколько раз уровень запускали. Нужен подсказке по управлению. */
   readonly attempts: Readonly<Record<string, number>>;
+  /** Звук выключен. Живёт здесь же, чтобы переживать перезагрузку. */
+  readonly muted: boolean;
 }
 
 export const PROGRESS_KEY = 'duskwing.progress';
 
-export const EMPTY_PROGRESS: Progress = { bestScores: {}, clearedLevels: [], attempts: {} };
+export const EMPTY_PROGRESS: Progress = {
+  bestScores: {},
+  clearedLevels: [],
+  attempts: {},
+  muted: false,
+};
 
 /** Уровень, на котором показывается подсказка по управлению. */
 const TUTORIAL_LEVEL_ID = 1;
@@ -80,13 +87,24 @@ export function loadProgress(storage: ProgressStorage): Progress {
     return EMPTY_PROGRESS;
   }
 
-  const candidate = parsed as { bestScores?: unknown; clearedLevels?: unknown; attempts?: unknown };
+  const candidate = parsed as {
+    bestScores?: unknown;
+    clearedLevels?: unknown;
+    attempts?: unknown;
+    muted?: unknown;
+  };
 
   return {
     bestScores: isNumberRecord(candidate.bestScores) ? candidate.bestScores : {},
     clearedLevels: isNumberArray(candidate.clearedLevels) ? candidate.clearedLevels : [],
     attempts: isNumberRecord(candidate.attempts) ? candidate.attempts : {},
+    muted: candidate.muted === true,
   };
+}
+
+/** Переключатель звука. Отдельной функцией — чтобы не плодить спреды в UI. */
+export function setMuted(progress: Progress, muted: boolean): Progress {
+  return { ...progress, muted };
 }
 
 export function saveProgress(storage: ProgressStorage, progress: Progress): void {

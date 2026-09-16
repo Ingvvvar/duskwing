@@ -206,3 +206,28 @@ body {
   color: #e8dcc0;
   font-size: 13px;
 }
+
+/* --- переключатель звука ------------------------------------------------ */
+
+.mute {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  right: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(5 6 14 / 45%);
+  color: #f4efe6;
+  /* Поверх оверлеев: он обязан быть доступен и в меню, и в игре. */
+  z-index: 2;
+  cursor: pointer;
+}
+
+.mute[aria-pressed='true'] {
+  color: #8d86a3;
+}

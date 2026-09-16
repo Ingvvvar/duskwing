@@ -58,6 +58,7 @@ export class PixiRenderer implements Renderer {
   #nextAccent: string | null = null;
   #fadeMs = 0;
   #fadeTotalMs = 0;
+  #reducedMotion = false;
 
   /**
    * Пройденное фоном расстояние. Величина чисто визуальная, поэтому копится
@@ -77,6 +78,28 @@ export class PixiRenderer implements Renderer {
    *
    * Не часть контракта `Renderer`: тот работает с состоянием, а не с уровнем.
    */
+  /**
+   * `prefers-reduced-motion`. По контракту ТЗ: частицы выключаются, вспышек
+   * нет, кроссфейд мгновенный. Меняется на ходу — настройку системы можно
+   * переключить, не перезагружая страницу.
+   *
+   * Не часть контракта `Renderer`: это свойство среды, а не состояния.
+   */
+  setReducedMotion(reduced: boolean): void {
+    if (reduced === this.#reducedMotion) {
+      return;
+    }
+
+    this.#reducedMotion = reduced;
+
+    const app = this.#app;
+
+    if (app !== null && this.#theme !== null) {
+      // Пересборка сцены: частицы надо не остановить, а не создавать.
+      this.#current?.setTheme(app.renderer, this.#theme, this.#config, reduced);
+    }
+  }
+
   setLevel(config: LevelConfig): void {
     this.#config = config;
 
@@ -84,7 +107,7 @@ export class PixiRenderer implements Renderer {
 
     // Полосы ветра зависят от зон уровня — сцену надо пересобрать под них.
     if (app !== null && this.#theme !== null) {
-      this.#current?.setTheme(app.renderer, this.#theme, config);
+      this.#current?.setTheme(app.renderer, this.#theme, config, this.#reducedMotion);
     }
   }
 
@@ -151,10 +174,13 @@ export class PixiRenderer implements Renderer {
     this.#finishFade();
     this.#theme = theme;
 
-    if (this.#current === null || crossfadeMs <= 0) {
+    // При prefers-reduced-motion кроссфейд мгновенный — контракт ТЗ.
+    const fadeMs = this.#reducedMotion ? 0 : crossfadeMs;
+
+    if (this.#current === null || fadeMs <= 0) {
       const scene = this.#current ?? this.#createScene();
 
-      scene.setTheme(app.renderer, theme, this.#config);
+      scene.setTheme(app.renderer, theme, this.#config, this.#reducedMotion);
       scene.setAlpha(1);
       this.#current = scene;
       this.#pipes?.setColor(theme.accent);
@@ -164,13 +190,13 @@ export class PixiRenderer implements Renderer {
 
     const next = this.#createScene();
 
-    next.setTheme(app.renderer, theme, this.#config);
+    next.setTheme(app.renderer, theme, this.#config, this.#reducedMotion);
     next.setAlpha(0);
 
     this.#next = next;
     this.#nextAccent = theme.accent;
     this.#fadeMs = 0;
-    this.#fadeTotalMs = crossfadeMs;
+    this.#fadeTotalMs = fadeMs;
   }
 
   draw(state: GameState, dtMs: number): void {

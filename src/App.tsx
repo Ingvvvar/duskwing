@@ -8,6 +8,7 @@ import { Hud } from './ui/Hud';
 import { LevelClear } from './ui/LevelClear';
 import { LevelSelect } from './ui/LevelSelect';
 import { Menu } from './ui/Menu';
+import { MuteButton } from './ui/MuteButton';
 
 /**
  * Обёртка `stage` нужна ResizeObserver: за самим канвасом наблюдать нельзя,
@@ -29,6 +30,9 @@ export function App(): ReactElement {
   return (
     <div className="stage" data-screen={view}>
       <canvas ref={canvasRef} className="game-canvas" />
+
+      {/* Виден на всех экранах: во время игры переключатель нужнее всего. */}
+      <MuteButton muted={session.muted} onToggle={session.toggleMuted} />
 
       {session.screen === 'menu' ? <Menu onPlay={session.openLevels} /> : null}
 

@@ -12,6 +12,7 @@ import {
   recordRun,
   resolveOutcome,
   saveProgress,
+  setMuted,
   shouldShowHint,
 } from '../src/game/progress';
 
@@ -44,7 +45,7 @@ describe('прогресс', () => {
     // Порча одного поля не обнуляет второе.
     expect(
       loadProgress(memoryStorage('{"bestScores":{"1":"много"},"clearedLevels":[1]}')),
-    ).toEqual({ bestScores: {}, clearedLevels: [1], attempts: {} });
+    ).toEqual({ bestScores: {}, clearedLevels: [1], attempts: {}, muted: false });
 
     // Бросающее чтение — приватный режим Safari — тоже даёт дефолт.
     const throwing: ProgressStorage = {
@@ -132,5 +133,30 @@ describe('исход забега', () => {
     expect(resolveOutcome(LEVEL_1.target - 1, LEVEL_1.target, 'over')).toBe('over');
     expect(resolveOutcome(LEVEL_1.target - 1, LEVEL_1.target, 'play')).toBe('running');
     expect(resolveOutcome(LEVEL_1.target, LEVEL_1.target, 'play')).toBe('cleared');
+  });
+});
+
+describe('мьют', () => {
+  it('по умолчанию звук включён', () => {
+    expect(EMPTY_PROGRESS.muted).toBe(false);
+    expect(loadProgress(memoryStorage()).muted).toBe(false);
+  });
+
+  it('переживает запись и чтение', () => {
+    const storage = memoryStorage();
+
+    saveProgress(storage, setMuted(EMPTY_PROGRESS, true));
+    expect(loadProgress(storage).muted).toBe(true);
+
+    saveProgress(storage, setMuted(loadProgress(storage), false));
+    expect(loadProgress(storage).muted).toBe(false);
+  });
+
+  it('мусор в поле читается как включённый звук и не роняет остальное', () => {
+    const broken = memoryStorage('{"bestScores":{"1":4},"clearedLevels":[1],"muted":"да"}');
+
+    expect(loadProgress(broken).muted).toBe(false);
+    expect(loadProgress(broken).bestScores['1']).toBe(4);
+    expect(loadProgress(broken).clearedLevels).toEqual([1]);
   });
 });
