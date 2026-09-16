@@ -2,12 +2,10 @@ import { Application, Container, Graphics, UPDATE_PRIORITY } from 'pixi.js';
 
 import { MAX_FRAME_MS, STEP_SECONDS, WORLD_HEIGHT, WORLD_WIDTH } from '../../game/constants';
 import type { GameState, LevelConfig, Renderer, Theme } from '../../game/types';
-import { createBird } from './entities/Bird';
+import { BirdRig } from './entities/Bird';
 import { PipePool } from './entities/Pipes';
 import { Scene } from './Scene';
 
-/** Цвет птицы: в `Theme` его нет, тема задаёт только акцент труб. */
-const BIRD_COLOR = 0xf05d5e;
 const LETTERBOX = 0x05060e;
 
 /** Доля скорости уровня, с которой фон ползёт до первого тапа. */
@@ -44,7 +42,7 @@ export class PixiRenderer implements Renderer {
 
   #app: Application | null = null;
   #world: Container | null = null;
-  #bird: Graphics | null = null;
+  #bird: BirdRig | null = null;
   #pipes: PipePool | null = null;
 
   /** Слоты фиксируют порядок по z: сцены приходят и уходят внутри них. */
@@ -127,12 +125,12 @@ export class PixiRenderer implements Renderer {
 
     const world = new Container({ label: 'world' });
     const pipes = new PipePool(theme.accent);
-    const bird = createBird(BIRD_COLOR);
+    const bird = new BirdRig();
 
     // Игровой слой всегда выше слоёв фона и никогда не получает фильтров.
     const gameplay = new Container({ label: 'gameplay' });
 
-    gameplay.addChild(pipes.container, bird);
+    gameplay.addChild(pipes.container, bird.view);
     world.addChild(this.#backgroundSlot, gameplay, this.#nearSlot, this.#gradeSlot);
 
     // Маска по логической сетке. Нужна из-за труб: труба рождается при
@@ -207,9 +205,6 @@ export class PixiRenderer implements Renderer {
       return;
     }
 
-    // Физики здесь нет: показывается снимок между двумя последними тиками.
-    bird.y = state.prevBirdY + (state.birdY - state.prevBirdY) * state.alpha;
-
     // Трубы — тот же момент времени, что и птица, поэтому (1 - alpha), а не
     // alpha: при alpha = 0 показывается положение на предыдущем тике, при
     // alpha → 1 — текущее. С alpha трубы ушли бы на тик вперёд птицы.
@@ -223,6 +218,10 @@ export class PixiRenderer implements Renderer {
     const advance = (this.#config.pipeSpeed * stepMs * pace) / 1000;
 
     this.#scrollX += advance;
+
+    // Риг замирает вместе с миром: при pace = 0 (смерть, «уровень пройден»)
+    // не двигаются ни пружины, ни моргание, ни холостое колебание.
+    bird.update(state, pace > 0 ? stepMs : 0, this.#config.flapVelocity, this.#reducedMotion);
 
     this.#current?.update(state, dtMs, this.#scrollX, advance);
     this.#next?.update(state, dtMs, this.#scrollX, advance);
