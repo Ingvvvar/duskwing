@@ -53,7 +53,7 @@ export class PixiRenderer implements Renderer {
   #current: Scene | null = null;
   #next: Scene | null = null;
   #theme: Theme | null = null;
-  #nextAccent: string | null = null;
+  #nextTheme: Theme | null = null;
   #fadeMs = 0;
   #fadeTotalMs = 0;
   #reducedMotion = false;
@@ -124,7 +124,7 @@ export class PixiRenderer implements Renderer {
     });
 
     const world = new Container({ label: 'world' });
-    const pipes = new PipePool(theme.accent);
+    const pipes = new PipePool();
     const bird = new BirdRig();
 
     // Игровой слой всегда выше слоёв фона и никогда не получает фильтров.
@@ -181,7 +181,7 @@ export class PixiRenderer implements Renderer {
       scene.setTheme(app.renderer, theme, this.#config, this.#reducedMotion);
       scene.setAlpha(1);
       this.#current = scene;
-      this.#pipes?.setColor(theme.accent);
+      this.#pipes?.setTheme(theme);
 
       return;
     }
@@ -192,7 +192,7 @@ export class PixiRenderer implements Renderer {
     next.setAlpha(0);
 
     this.#next = next;
-    this.#nextAccent = theme.accent;
+    this.#nextTheme = theme;
     this.#fadeMs = 0;
     this.#fadeTotalMs = fadeMs;
   }
@@ -344,11 +344,11 @@ export class PixiRenderer implements Renderer {
     this.#next = null;
     next.setAlpha(1);
 
-    if (this.#nextAccent !== null) {
-      // Цвет труб меняется разом в конце перехода: плавно смешивать его
+    if (this.#nextTheme !== null) {
+      // Облик труб меняется разом в конце перехода: плавно смешивать форму
       // нечем, а на середине подмена была бы заметнее всего.
-      this.#pipes?.setColor(this.#nextAccent);
-      this.#nextAccent = null;
+      this.#pipes?.setTheme(this.#nextTheme);
+      this.#nextTheme = null;
     }
   }
 }

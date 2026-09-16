@@ -1,8 +1,9 @@
-import { Container, type Renderer } from 'pixi.js';
+import { Container, Sprite, Texture, type Renderer } from 'pixi.js';
 
-import { MAX_FRAME_MS } from '../../game/constants';
+import { GROUND_TOP, MAX_FRAME_MS, WORLD_WIDTH } from '../../game/constants';
 import type { GameState, LevelConfig, Theme } from '../../game/types';
 import { PARALLAX, WEATHER_PARALLAX } from '../parallax';
+import { createEdgeHazeTexture } from './textures';
 import { CelestialLayer } from './layers/Celestial';
 import { ForegroundLayer } from './layers/Foreground';
 import { GradeLayer } from './layers/Grade';
@@ -20,6 +21,18 @@ import { WindLayer } from './layers/Wind';
  */
 const RIDGE_FAR = { baselineY: 548 - 120, tileWidth: 512, detail: 0 } as const;
 const RIDGE_NEAR = { baselineY: 548 - 40, tileWidth: 384, detail: 0.22, resolution: 2 } as const;
+
+/**
+ * Дымка у правой кромки: препятствие проступает из глубины, а не выезжает
+ * из-под ножа маски.
+ *
+ * Ширина выведена из времени реакции, а не подобрана. На самой быстрой
+ * скорости (190 px/s — уровень 5 на своей цели и бесконечный режим на сотне
+ * труб) плотная часть зоны — та, где альфа выше половины максимума, —
+ * проходится за 68 мс при допуске около 150. Альфа растёт квадратично,
+ * поэтому основная ширина почти прозрачна.
+ */
+const EDGE_HAZE = { width: 44, maxAlpha: 0.85 } as const;
 
 /**
  * Одна полная сцена фона: слои 0–5 в `background`, слои 6–7 в `near`,
@@ -44,6 +57,9 @@ export class Scene {
   readonly #lightning = new LightningLayer();
   readonly #ground = new GroundLayer();
   readonly #foreground = new ForegroundLayer();
+  readonly #edge = new Sprite({ label: 'edge-haze' });
+
+  #edgeTexture: Texture | null = null;
 
   #weatherKind: Theme['weather']['kind'] = 'none';
 
@@ -60,7 +76,12 @@ export class Scene {
       // тёмным силуэтом, как и положено.
       this.#lightning.view,
     );
-    this.near.addChild(this.#ground.view, this.#foreground.view);
+    // Дымка кромки выше игрового слоя, но ниже земли: она затеняет
+    // препятствие, а не землю. Это спрайт, а не фильтр, поэтому правило
+    // «на игровом слое фильтров нет» не нарушается.
+    this.#edge.position.set(WORLD_WIDTH - EDGE_HAZE.width, 0);
+    this.#edge.setSize(EDGE_HAZE.width, GROUND_TOP);
+    this.near.addChild(this.#edge, this.#ground.view, this.#foreground.view);
 
     // Фильтр один на обе группы сцены — без общего грейда земля отваливается
     // от фона по цвету на тёмных темах. Маска висит выше, на `world`.
@@ -79,6 +100,13 @@ export class Scene {
     this.#lightning.setTheme(theme, reducedMotion);
     this.#ground.setTheme(theme);
     this.#foreground.setTheme(theme);
+
+    const edge = createEdgeHazeTexture(theme.sky[3], EDGE_HAZE.width, EDGE_HAZE.maxAlpha);
+
+    this.#edgeTexture?.destroy(true);
+    this.#edgeTexture = edge;
+    this.#edge.texture = edge;
+    this.#edge.setSize(EDGE_HAZE.width, GROUND_TOP);
     this.#grade(theme);
     this.#weatherKind = theme.weather.kind;
   }
@@ -119,6 +147,8 @@ export class Scene {
     this.#lightning.destroy();
     this.#ground.destroy();
     this.#foreground.destroy();
+    this.#edgeTexture?.destroy(true);
+    this.#edgeTexture = null;
     this.grade.destroy();
 
     // texture: false — общие текстуры остаются живыми, сцена уносит только

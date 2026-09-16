@@ -144,26 +144,30 @@ export class BirdRig {
     const body = new Graphics().ellipse(0, 0, 13, 10).fill(PALETTE.body);
 
     this.#wingFar.position.set(-1, -3);
-    this.#wingFar.addChild(new Graphics().ellipse(-7, 0, 8.5, 3.2).fill(PALETTE.wing));
+    this.#wingFar.addChild(new Graphics().ellipse(-8, 0, 10, 3.6).fill(PALETTE.wing));
     this.#wingFar.scale.set(FEEL.wingFarScale);
 
     this.#tail.position.set(-10.5, -1);
     this.#tail.addChild(
-      new Graphics().poly([0, -3, -10, -6, -7.5, 0, -10, 6, 0, 3], true).fill(PALETTE.tail),
+      new Graphics().poly([0, -3.5, -13, -7.5, -9.5, 0, -13, 7.5, 0, 3.5], true).fill(PALETTE.tail),
     );
 
-    this.#head.position.set(7.5, -4.5);
-    this.#head.addChild(new Graphics().circle(0, 0, 6.6).fill(PALETTE.head));
-    this.#head.addChild(new Graphics().poly([4.5, -1.5, 12, 1, 4.5, 3.5], true).fill(PALETTE.beak));
+    // Плотные части — тело, голова и клюв — не выходят за хитбокс больше
+    // чем на 3 px: иначе игрок увидит наложение на препятствие без смерти.
+    // Хитбокс 10.5, предел выноса 13.5. Голова: 6.95 + 5.6 = 12.55, клюв 13.2.
+    // Крылья и хвост крупнее свободно — они мягкие.
+    this.#head.position.set(6, -3.5);
+    this.#head.addChild(new Graphics().circle(0, 0, 5.6).fill(PALETTE.head));
+    this.#head.addChild(new Graphics().poly([3.6, -1.2, 7.2, 0.4, 3.6, 2.6], true).fill(PALETTE.beak));
 
-    this.#eye.position.set(2.4, -1.8);
-    this.#eye.addChild(new Graphics().circle(0, 0, 2.7).fill(PALETTE.sclera));
-    this.#pupil = new Graphics().circle(0, 0, 1.35).fill(PALETTE.pupil);
+    this.#eye.position.set(2, -1.5);
+    this.#eye.addChild(new Graphics().circle(0, 0, 2.4).fill(PALETTE.sclera));
+    this.#pupil = new Graphics().circle(0, 0, 1.2).fill(PALETTE.pupil);
     this.#eye.addChild(this.#pupil);
     this.#head.addChild(this.#eye);
 
     this.#wingNear.position.set(0, 1);
-    this.#wingNear.addChild(new Graphics().ellipse(-8, 0, 10, 4).fill(PALETTE.wing));
+    this.#wingNear.addChild(new Graphics().ellipse(-9, 0, 12, 4.6).fill(PALETTE.wing));
 
     this.view.addChild(this.#wingFar, this.#tail, body, this.#head, this.#wingNear);
   }

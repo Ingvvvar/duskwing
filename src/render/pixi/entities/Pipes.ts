@@ -1,25 +1,28 @@
-import { Container, Graphics, GraphicsContext } from 'pixi.js';
+import { Container, NineSliceSprite, Texture } from 'pixi.js';
 
 import { GROUND_TOP, PIPE_WIDTH } from '../../../game/constants';
-import type { Pipe } from '../../../game/types';
+import type { Pipe, Theme } from '../../../game/types';
+import { createObstacleTexture, type ObstacleTexture } from '../textures';
 
 interface PipeView {
   readonly container: Container;
-  readonly top: Graphics;
-  readonly bottom: Graphics;
+  readonly top: NineSliceSprite;
+  readonly bottom: NineSliceSprite;
 }
 
 /**
- * Пул дисплей-объектов под трубы, сопоставленный с состоянием по `id`.
+ * Пул препятствий, сопоставленный с состоянием по `id`.
  *
- * Геометрия строится один раз: общий `GraphicsContext` с прямоугольником
- * единичной высоты, растянутый `scale.y` под конкретную трубу в момент выдачи
- * из пула. Покадрово меняется только `container.x` — ни одного `clear()` и ни
- * одной перерисовки за кадр.
+ * Каждая половина — один `NineSliceSprite`: в его плитку запечены навершие,
+ * тело, декор и мягкий контур. Итого на препятствие контейнер плюс две
+ * половины, три дисплей-объекта.
  *
- * Единичная высота, а не полная, выбрана намеренно: прямоугольник во всю
- * высоту мира вылезал бы за пределы логической сетки в полосы леттербокса и
- * потребовал бы маски на корневом контейнере.
+ * Девятислайсовая нарезка растягивает только середину, поэтому навершие у
+ * кромки просвета не деформируется ни при какой высоте трубы, а геометрия
+ * по-прежнему строится один раз: покадрово меняется только `container.x`.
+ *
+ * Плотная часть плитки — ровно `PIPE_WIDTH` и ровно цвета `accent`, то есть
+ * ровно то, что участвует в коллизии. Всё остальное мягкое.
  */
 export class PipePool {
   readonly container = new Container({ label: 'pipes' });
@@ -27,35 +30,25 @@ export class PipePool {
   readonly #active = new Map<number, PipeView>();
   readonly #free: PipeView[] = [];
 
-  #context: GraphicsContext;
-
-  constructor(color: string) {
-    this.#context = PipePool.#buildContext(color);
-  }
-
-  static #buildContext(color: string): GraphicsContext {
-    return new GraphicsContext().rect(0, 0, PIPE_WIDTH, 1).fill(color);
-  }
+  #top: ObstacleTexture | null = null;
+  #bottom: ObstacleTexture | null = null;
 
   /**
-   * Цвет труб задаётся темой (`Theme.accent`), поэтому при смене темы общий
-   * контекст пересобирается, а прежний уничтожается. Разделяемый контекст не
-   * принадлежит ни одному `Graphics` и сам по себе не умрёт.
+   * Облик задаётся темой, поэтому плитки пересобираются при её смене — там
+   * же, где раньше пересобирался разделяемый контекст под `accent`.
    */
-  setColor(color: string): void {
-    const next = PipePool.#buildContext(color);
+  setTheme(theme: Theme): void {
+    const top = createObstacleTexture(theme, 'top');
+    const bottom = createObstacleTexture(theme, 'bottom');
 
     for (const view of [...this.#active.values(), ...this.#free]) {
-      view.top.context = next;
-      view.bottom.context = next;
+      PipePool.#dress(view, top, bottom);
     }
 
-    this.#context.destroy();
-    this.#context = next;
-  }
-
-  destroy(): void {
-    this.#context.destroy();
+    this.#top?.texture.destroy(true);
+    this.#bottom?.texture.destroy(true);
+    this.#top = top;
+    this.#bottom = bottom;
   }
 
   /**
@@ -83,28 +76,76 @@ export class PipePool {
     }
   }
 
+  destroy(): void {
+    this.#top?.texture.destroy(true);
+    this.#bottom?.texture.destroy(true);
+    this.#top = null;
+    this.#bottom = null;
+  }
+
+  static #dress(view: PipeView, top: ObstacleTexture, bottom: ObstacleTexture): void {
+    view.top.texture = top.texture;
+    view.top.bottomHeight = top.capBorder;
+    view.top.topHeight = top.tailBorder;
+
+    view.bottom.texture = bottom.texture;
+    view.bottom.topHeight = bottom.capBorder;
+    view.bottom.bottomHeight = bottom.tailBorder;
+  }
+
   #acquire(pipe: Pipe): PipeView {
     const view = this.#free.pop() ?? this.#create();
+    const top = this.#top;
+    const bottom = this.#bottom;
+
+    view.container.visible = true;
+
+    if (top === null || bottom === null) {
+      return view;
+    }
+
     const gapTop = pipe.gapCenter - pipe.gapHeight / 2;
     const gapBottom = pipe.gapCenter + pipe.gapHeight / 2;
+    const floor = (texture: ObstacleTexture): number => texture.capBorder + texture.tailBorder;
 
+    // Спрайт шире коллизии на мягкое поле с каждой стороны, поэтому ставится
+    // левее на `pad`. Прямоугольник коллизии при этом не сдвигается.
+    view.top.x = -top.pad;
     view.top.y = 0;
-    view.top.scale.y = Math.max(0, gapTop);
+    view.top.width = PIPE_WIDTH + top.pad * 2;
+    view.top.height = Math.max(floor(top), gapTop);
+
+    view.bottom.x = -bottom.pad;
     view.bottom.y = gapBottom;
-    view.bottom.scale.y = Math.max(0, GROUND_TOP - gapBottom);
-    view.container.visible = true;
+    view.bottom.width = PIPE_WIDTH + bottom.pad * 2;
+    view.bottom.height = Math.max(floor(bottom), GROUND_TOP - gapBottom);
 
     return view;
   }
 
   #create(): PipeView {
     const container = new Container();
-    const top = new Graphics(this.#context);
-    const bottom = new Graphics(this.#context);
+    const make = (): NineSliceSprite =>
+      new NineSliceSprite({
+        texture: Texture.EMPTY,
+        // По горизонтали не растягиваем вовсе: ширина равна ширине плитки.
+        leftWidth: 0,
+        rightWidth: 0,
+        topHeight: 0,
+        bottomHeight: 0,
+      });
+    const view: PipeView = { container, top: make(), bottom: make() };
 
-    container.addChild(top, bottom);
+    container.addChild(view.top, view.bottom);
     this.container.addChild(container);
 
-    return { container, top, bottom };
+    const top = this.#top;
+    const bottom = this.#bottom;
+
+    if (top !== null && bottom !== null) {
+      PipePool.#dress(view, top, bottom);
+    }
+
+    return view;
   }
 }

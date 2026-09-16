@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { BIRD_RADIUS_HITBOX, BIRD_X, PIPE_WIDTH } from '../src/game/constants';
+import { PLAYABLE } from '../src/game/levels';
 import { airflowAt, airflowNormalised, airflowPeriod } from '../src/game/mechanics';
+import { circleHitsRect, pipeRects } from '../src/game/physics';
 import {
   DUSK,
   ENDLESS_FULL_SCORE,
@@ -113,5 +116,45 @@ describe('плитка полос ветра', () => {
       -airflowNormalised((period * 3) / 4, airflow),
       9,
     );
+  });
+});
+
+describe('облик препятствия', () => {
+  it('мягкие поля соседних препятствий не сливаются', () => {
+    const spacing = Math.min(...PLAYABLE.map((level) => level.pipeSpacing));
+    const limit = (spacing - PIPE_WIDTH) / 2;
+
+    for (const theme of Object.values(THEMES)) {
+      expect(theme.obstacle.capOverhang + theme.obstacle.edgeSoftness).toBeLessThan(limit);
+    }
+  });
+
+  /**
+   * Документирующий тест: показывает, ПОЧЕМУ вылет навершия обязан быть
+   * мягким. Птица достаёт хитбоксом за прямоугольник коллизии, оставаясь
+   * живой, — на глубину больше любого используемого вылета. Значит плотная
+   * деталь там убивала бы о то, что выглядит проходимым.
+   *
+   * Удалять нельзя: без него правило из TASK.md остаётся словами.
+   */
+  it('вылет навершия достижим живой птицей — поэтому он мягкий', () => {
+    const deepest = Math.max(
+      ...Object.values(THEMES).map((theme) => theme.obstacle.capOverhang),
+    );
+    const gapCenter = 274;
+    const gapHeight = 210;
+    const gapTop = gapCenter - gapHeight / 2;
+
+    // Труба правее птицы: хитбокс не пересекает прямоугольник, птица жива,
+    // но её правый край стоит ровно на внешней кромке вылета.
+    const pipeX = BIRD_X + BIRD_RADIUS_HITBOX + deepest;
+    const birdY = gapTop - 4;
+    const [top, bottom] = pipeRects(pipeX, gapCenter, gapHeight);
+
+    expect(circleHitsRect(BIRD_X, birdY, BIRD_RADIUS_HITBOX, top)).toBe(false);
+    expect(circleHitsRect(BIRD_X, birdY, BIRD_RADIUS_HITBOX, bottom)).toBe(false);
+
+    // Внешняя кромка вылета и правый край хитбокса — одна точка.
+    expect(pipeX - deepest).toBeCloseTo(BIRD_X + BIRD_RADIUS_HITBOX, 9);
   });
 });

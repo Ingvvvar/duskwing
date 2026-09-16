@@ -20,6 +20,7 @@ export const DUSK: Theme = {
   foreground: { kind: 'none', blur: 0 },
   grade: { saturation: 1.04, brightness: 1, tint: '#FFE8C8', vignette: 0.18 },
   accent: '#E8DCC0',
+  obstacle: { kind: 'column', capHeight: 14, capOverhang: 8, decor: 'rings', edgeSoftness: 6 },
 };
 
 
@@ -36,6 +37,7 @@ export const NIGHT: Theme = {
   foreground: { kind: 'grass', blur: 3 },
   grade: { saturation: 0.85, brightness: 1, tint: '#C8D8FF', vignette: 0.24 },
   accent: '#D9E2F5',
+  obstacle: { kind: 'slab', capHeight: 12, capOverhang: 6, decor: 'grooves', edgeSoftness: 7 },
 };
 
 /** Гроза: светила нет, дождь и вспышки, сильно обесцвеченный грейд. */
@@ -51,6 +53,7 @@ export const STORM: Theme = {
   foreground: { kind: 'streaks', blur: 2 },
   grade: { saturation: 0.65, brightness: 0.98, tint: '#D6E2EC', vignette: 0.3 },
   accent: '#E6ECEF',
+  obstacle: { kind: 'monolith', capHeight: 16, capOverhang: 10, decor: 'cracks', edgeSoftness: 8 },
 };
 
 /**
@@ -71,6 +74,7 @@ export const CANYON: Theme = {
   foreground: { kind: 'rocks', blur: 2 },
   grade: { saturation: 1.1, brightness: 1, tint: '#FFD8B0', vignette: 0.26 },
   accent: '#FFE8C8',
+  obstacle: { kind: 'spire', capHeight: 20, capOverhang: 12, decor: 'grooves', edgeSoftness: 9 },
 };
 
 /** Пустота: почти монохром, ленты сияния, тяжёлая виньетка. */
@@ -86,6 +90,7 @@ export const VOID: Theme = {
   foreground: { kind: 'none', blur: 0 },
   grade: { saturation: 0.55, brightness: 0.95, tint: '#C8D0FF', vignette: 0.42 },
   accent: '#6FE3B8',
+  obstacle: { kind: 'crystal', capHeight: 18, capOverhang: 10, decor: 'facets', edgeSoftness: 10 },
 };
 
 /** Все темы по id. Дев-переключатель `?theme=<id>` ходит сюда же. */
@@ -165,6 +170,8 @@ export function interpolateTheme(from: Theme, to: Theme, t: number): Theme {
       vignette: mix(from.grade.vignette, to.grade.vignette, k),
     },
     accent: mixHex(from.accent, to.accent, k),
+    // Форма препятствия структурна: смешивать колонну с кристаллом нечем.
+    obstacle: late ? to.obstacle : from.obstacle,
   };
 }
 
@@ -228,4 +235,5 @@ export const DEBUG_THEME: Theme = {
   foreground: { kind: 'grass', blur: 3 },
   grade: { saturation: 0.8, brightness: 1.1, tint: '#FF00E6', vignette: 0.5 },
   accent: '#00FFB3',
+  obstacle: { kind: 'crystal', capHeight: 22, capOverhang: 14, decor: 'facets', edgeSoftness: 12 },
 };

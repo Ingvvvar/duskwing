@@ -1,6 +1,12 @@
 import { Graphics, Rectangle, Texture, type Renderer } from 'pixi.js';
 
-import { FOREGROUND_BAND_HEIGHT, GROUND_HEIGHT, WORLD_HEIGHT, WORLD_WIDTH } from '../../game/constants';
+import {
+  FOREGROUND_BAND_HEIGHT,
+  GROUND_HEIGHT,
+  PIPE_WIDTH,
+  WORLD_HEIGHT,
+  WORLD_WIDTH,
+} from '../../game/constants';
 import { airflowNormalised, airflowPeriod } from '../../game/mechanics';
 import { mulberry32 } from '../../game/rng';
 import type { Theme } from '../../game/types';
@@ -399,6 +405,250 @@ export function createVignetteTexture(strength: number): Texture {
   gradient.addColorStop(1, `rgb(${String(edge)}, ${String(edge)}, ${String(edge)})`);
   context.fillStyle = gradient;
   context.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+  return Texture.from(context.canvas);
+}
+
+const OBSTACLE_SEED = 20260922;
+/** Растягиваемая середина плитки препятствия. */
+const OBSTACLE_MIDDLE = 26;
+/** Нерастягиваемый дальний конец. */
+const OBSTACLE_TAIL = 4;
+
+export interface ObstacleTexture {
+  readonly texture: Texture;
+  /** Отступ слева: спрайт ставится левее коллизии на эту величину. */
+  readonly pad: number;
+  /** Высота нерастягиваемой части со стороны навершия. */
+  readonly capBorder: number;
+  readonly tailBorder: number;
+}
+
+/**
+ * Плитка препятствия под NineSliceSprite.
+ *
+ * Внутри `PIPE_WIDTH` — плотная зона, ровно та, что участвует в коллизии, и
+ * ровно цвета `accent`. Ядро заливается на всю ширину всегда: рисунок уже
+ * коллизии означал бы смерть о пустое место, а это та же нечестность, только
+ * с другой стороны. Всё, что снаружи ядра — вылет навершия и мягкое поле, —
+ * рисуется с падающей альфой и рваным краем.
+ *
+ * Разделение рисунка между серединой и навершием не декоративное, а
+ * вынужденное: девятислайс растягивает середину на всю высоту трубы, поэтому
+ * там живут только вертикальные узоры — они растяжение переживают. Всё
+ * горизонтальное и вся форма силуэта уходят в навершие, которое не тянется.
+ */
+export function createObstacleTexture(theme: Theme, half: 'top' | 'bottom'): ObstacleTexture {
+  const look = theme.obstacle;
+  const pad = look.capOverhang + look.edgeSoftness;
+  const width = PIPE_WIDTH + pad * 2;
+  const height = look.capHeight + OBSTACLE_MIDDLE + OBSTACLE_TAIL;
+  const context = createCanvas(width, height);
+  const random = mulberry32(OBSTACLE_SEED);
+  const capAtTop = half === 'bottom';
+  const left = pad;
+  const right = pad + PIPE_WIDTH;
+
+  // 1. Плотное ядро во всю ширину коллизии.
+  context.fillStyle = theme.accent;
+  context.fillRect(left, 0, PIPE_WIDTH, height);
+
+  // 2. Вертикальный узор середины: растяжение его не портит.
+  drawBodyDecor(context, look.decor, left, PIPE_WIDTH, height, theme.accent);
+
+  // 3. Навершие: форма силуэта и всё горизонтальное — здесь.
+  const capTop = capAtTop ? 0 : height - look.capHeight;
+
+  drawCap(context, look, left, PIPE_WIDTH, capTop, capAtTop, theme.accent, random);
+
+  // 4. Мягкое поле по бокам: падает от кромки коллизии наружу.
+  for (const side of [-1, 1] as const) {
+    const from = side < 0 ? left : right;
+    const gradient = context.createLinearGradient(from, 0, from + side * pad, 0);
+
+    gradient.addColorStop(0, rgba(theme.accent, 0.42));
+    gradient.addColorStop(1, rgba(theme.accent, 0));
+    context.fillStyle = gradient;
+    context.fillRect(Math.min(from, from + side * pad), 0, pad, height);
+
+    // Вылет навершия — плотнее поля, но всё равно мягкий.
+    const capGradient = context.createLinearGradient(from, 0, from + side * look.capOverhang, 0);
+
+    capGradient.addColorStop(0, rgba(theme.accent, 0.62));
+    capGradient.addColorStop(1, rgba(theme.accent, 0));
+    context.fillStyle = capGradient;
+    context.fillRect(
+      Math.min(from, from + side * look.capOverhang),
+      capTop,
+      look.capOverhang,
+      look.capHeight,
+    );
+  }
+
+  // 5. Рваный край поля: ровная кромка читалась бы как плотная.
+  context.globalCompositeOperation = 'destination-out';
+  context.fillStyle = 'rgba(0,0,0,1)';
+  for (let y = 0; y < height; y += 2) {
+    const biteLeft = random() * look.edgeSoftness * 0.9;
+    const biteRight = random() * look.edgeSoftness * 0.9;
+
+    context.fillRect(0, y, biteLeft, 2);
+    context.fillRect(width - biteRight, y, biteRight, 2);
+  }
+  context.globalCompositeOperation = 'source-over';
+
+  return {
+    texture: Texture.from(context.canvas),
+    pad,
+    capBorder: look.capHeight,
+    tailBorder: OBSTACLE_TAIL,
+  };
+}
+
+/** Узор тела: только вертикальный — середина плитки растягивается. */
+function drawBodyDecor(
+  context: CanvasRenderingContext2D,
+  decor: Theme['obstacle']['decor'],
+  left: number,
+  width: number,
+  height: number,
+  accent: string,
+): void {
+  const dark = rgba(accent, 0.3);
+  const light = 'rgba(255, 255, 255, 0.12)';
+
+  if (decor === 'grooves' || decor === 'cracks') {
+    context.fillStyle = dark;
+    for (let x = left + 9; x < left + width - 6; x += 12) {
+      context.fillRect(x, 0, 2.5, height);
+    }
+    context.fillStyle = light;
+    for (let x = left + 13; x < left + width - 6; x += 12) {
+      context.fillRect(x, 0, 1, height);
+    }
+
+    return;
+  }
+
+  if (decor === 'facets') {
+    // Две грани: светлая слева, тёмная справа, раздел вертикальный.
+    context.fillStyle = light;
+    context.fillRect(left, 0, width * 0.34, height);
+    context.fillStyle = dark;
+    context.fillRect(left + width * 0.74, 0, width * 0.26, height);
+
+    return;
+  }
+
+  if (decor === 'rings') {
+    // У колонны вертикальная растушёвка объёма; кольца — в навершии.
+    const gradient = context.createLinearGradient(left, 0, left + width, 0);
+
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.14)');
+    gradient.addColorStop(0.45, 'rgba(255, 255, 255, 0)');
+    gradient.addColorStop(1, rgba(accent, 0.28));
+    context.fillStyle = gradient;
+    context.fillRect(left, 0, width, height);
+  }
+}
+
+/** Навершие: форма силуэта темы. Не растягивается, поэтому здесь можно всё. */
+function drawCap(
+  context: CanvasRenderingContext2D,
+  look: Theme['obstacle'],
+  left: number,
+  width: number,
+  capTop: number,
+  capAtTop: boolean,
+  accent: string,
+  random: () => number,
+): void {
+  const dark = rgba(accent, 0.34);
+  const light = 'rgba(255, 255, 255, 0.2)';
+  const bright = 'rgba(255, 255, 255, 0.32)';
+  // Кромка, обращённая к просвету.
+  const edge = capAtTop ? capTop : capTop + look.capHeight;
+  const inward = capAtTop ? 1 : -1;
+
+  context.save();
+  context.beginPath();
+  context.rect(left, capTop, width, look.capHeight);
+  context.clip();
+
+  if (look.kind === 'column') {
+    // Кольца карниза.
+    context.fillStyle = light;
+    for (let i = 1; i <= 3; i += 1) {
+      context.fillRect(left, edge + inward * (i * 4), width, 2);
+    }
+    context.fillStyle = bright;
+    context.fillRect(left, edge - (capAtTop ? 0 : 3), width, 3);
+  } else if (look.kind === 'slab') {
+    // Ступень: плита с выраженной фаской.
+    context.fillStyle = dark;
+    context.fillRect(left, edge + inward * 6, width, look.capHeight);
+    context.fillStyle = bright;
+    context.fillRect(left, edge - (capAtTop ? 0 : 3), width, 3);
+  } else if (look.kind === 'monolith') {
+    // Скол: рваная кромка.
+    context.fillStyle = dark;
+    context.beginPath();
+    context.moveTo(left, edge);
+    for (let x = left; x <= left + width; x += 8) {
+      context.lineTo(x, edge + inward * (2 + random() * 9));
+    }
+    context.lineTo(left + width, edge + inward * look.capHeight);
+    context.lineTo(left, edge + inward * look.capHeight);
+    context.closePath();
+    context.fill();
+  } else if (look.kind === 'spire') {
+    // Шпиль: сужение к просвету, поверх сплошного ядра.
+    context.fillStyle = dark;
+    context.beginPath();
+    context.moveTo(left, edge);
+    context.lineTo(left + width * 0.22, edge + inward * look.capHeight);
+    context.lineTo(left, edge + inward * look.capHeight);
+    context.closePath();
+    context.fill();
+    context.beginPath();
+    context.moveTo(left + width, edge);
+    context.lineTo(left + width * 0.78, edge + inward * look.capHeight);
+    context.lineTo(left + width, edge + inward * look.capHeight);
+    context.closePath();
+    context.fill();
+    context.fillStyle = bright;
+    context.fillRect(left + width * 0.3, edge - (capAtTop ? 0 : 2), width * 0.4, 2);
+  } else {
+    // Кристалл: шеврон к просвету.
+    context.fillStyle = bright;
+    context.beginPath();
+    context.moveTo(left, edge + inward * look.capHeight);
+    context.lineTo(left + width / 2, edge);
+    context.lineTo(left + width, edge + inward * look.capHeight);
+    context.lineTo(left + width, edge + inward * (look.capHeight + 4));
+    context.lineTo(left, edge + inward * (look.capHeight + 4));
+    context.closePath();
+    context.fill();
+  }
+
+  context.restore();
+}
+
+/** Дымка у правой кромки: препятствие проступает, а не выезжает из-под маски. */
+export function createEdgeHazeTexture(color: string, width: number, maxAlpha: number): Texture {
+  const context = createCanvas(width, 8);
+  const gradient = context.createLinearGradient(0, 0, width, 0);
+
+  // Квадратичное нарастание: основная ширина почти прозрачна, плотная часть
+  // узкая — иначе препятствие прячется дольше, чем игрок успевает среагировать.
+  for (let i = 0; i <= 10; i += 1) {
+    const t = i / 10;
+
+    gradient.addColorStop(t, rgba(color, maxAlpha * t * t));
+  }
+
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, width, 8);
 
   return Texture.from(context.canvas);
 }

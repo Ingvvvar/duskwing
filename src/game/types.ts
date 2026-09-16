@@ -21,6 +21,24 @@ export interface Theme {
   foreground: { kind: 'none' | 'grass' | 'streaks' | 'rocks'; blur: number };
   grade: { saturation: number; brightness: number; tint: string; vignette: number };
   accent: string;                                 // цвет труб — задаётся темой
+  /**
+   * Облик препятствия — данные, не код.
+   *
+   * Прямоугольник коллизии от него не зависит ни на пиксель: ширина всегда
+   * `PIPE_WIDTH`, цвет плотной части всегда `accent`. Всё, что выходит за
+   * этот прямоугольник, обязано быть мягким — см. контракт читаемости
+   * в TASK.md.
+   */
+  obstacle: {
+    kind: 'column' | 'slab' | 'monolith' | 'spire' | 'crystal';
+    /** Высота навершия у кромки просвета, px. */
+    capHeight: number;
+    /** Вылет навершия вбок за пределы коллизии, px. Только мягкий. */
+    capOverhang: number;
+    decor: 'none' | 'rings' | 'grooves' | 'cracks' | 'facets';
+    /** Ширина мягкого поля по бокам за вылетом, px. */
+    edgeSoftness: number;
+  };
 }
 
 /** Состояние автомата игры. Цель уровня сюда не входит: её сверяет UI. */
