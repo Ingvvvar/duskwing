@@ -5,7 +5,12 @@ import { airflowPeriod } from '../../../game/mechanics';
 import type { GameState, LevelConfig, Theme } from '../../../game/types';
 import { createWindTexture } from '../textures';
 
-const MAX_ALPHA = 0.16;
+/**
+ * Телеграф должен быть виден до входа в зону, а не искаться глазами, — при
+ * 0.16 полосы читались слишком мягко. Запас по контракту читаемости это
+ * позволяет: на каньоне максимум яркости фона 22.6% при пороге 45%.
+ */
+const MAX_ALPHA = 0.24;
 
 /**
  * Полосы ветра: телеграф зон `airflow`, а не украшение фона.
