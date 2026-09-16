@@ -26,9 +26,11 @@ describe('кривая видов препятствий', () => {
     const history = run(started(LEVEL_1, mulberry32(5)), { frames: 4000, control: autopilot });
     const shapes = shapesInOrder(history);
 
-    expect(shapes.length).toBeGreaterThanOrEqual(8);
-    expect(shapes.slice(0, 6)).toEqual(LEVEL_1.warmup);
-    expect(shapes.slice(6)).toEqual(shapes.slice(6).map(() => 'both'));
+    expect(shapes.length).toBeGreaterThan(LEVEL_1.warmup.length);
+    const curve = LEVEL_1.warmup.length;
+
+    expect(shapes.slice(0, curve)).toEqual(LEVEL_1.warmup);
+    expect(shapes.slice(curve)).toEqual(shapes.slice(curve).map(() => 'both'));
   });
 
   it('у остальных уровней кривой нет — все препятствия обычные', () => {
@@ -49,39 +51,60 @@ describe('кривая видов препятствий', () => {
    * препятствиях, поэтому первое верхнее встаёт не в самый край полосы —
    * и это правильно: инвариант «просветы не прыгают» остаётся целым.
    */
-  it('односторонние оставляют новичку запас на ошибку', () => {
-    const history = run(started(LEVEL_1, mulberry32(11)), { frames: 2600, control: autopilot });
-    const first = new Map<number, { shape: PipeShape; top: number; bottom: number }>();
+  it('односторонние оставляют новичку запас, а кривая не идёт вспять', () => {
+    const history = run(started(LEVEL_1, mulberry32(11)), { frames: 3000, control: autopilot });
+    const first = new Map<number, { shape: PipeShape; room: number }>();
 
     for (const state of history) {
       for (const pipe of state.pipes) {
-        if (!first.has(pipe.id)) {
-          first.set(pipe.id, {
-            shape: pipe.shape,
-            top: pipe.baseGapCenter - pipe.gapHeight / 2,
-            bottom: pipe.baseGapCenter + pipe.gapHeight / 2,
-          });
+        if (first.has(pipe.id) || pipe.shape === 'both') {
+          continue;
         }
+
+        const edge =
+          pipe.shape === 'bottom'
+            ? pipe.baseGapCenter + pipe.gapHeight / 2
+            : pipe.baseGapCenter - pipe.gapHeight / 2;
+
+        first.set(pipe.id, {
+          shape: pipe.shape,
+          room:
+            pipe.shape === 'bottom'
+              ? edge - BIRD_RADIUS_HITBOX - BIRD_START_Y
+              : BIRD_START_Y - (edge + BIRD_RADIUS_HITBOX),
+        });
       }
     }
 
-    const seen = [...first.values()];
+    const ordered = [...first.entries()].sort(([a], [b]) => a - b).map(([, value]) => value);
+    const tops = ordered.filter((entry) => entry.shape === 'top').map((entry) => entry.room);
+    const bottoms = ordered.filter((entry) => entry.shape === 'bottom').map((entry) => entry.room);
 
-    for (const pipe of seen) {
-      if (pipe.shape === 'bottom') {
-        // Запас на падение от стартовой высоты до опасной кромки.
-        expect(pipe.bottom - BIRD_RADIUS_HITBOX - BIRD_START_Y).toBeGreaterThanOrEqual(140);
-      }
+    expect(tops.length).toBeGreaterThanOrEqual(3);
+    expect(bottoms.length).toBeGreaterThanOrEqual(4);
 
-      if (pipe.shape === 'top') {
-        // Запас на подъём: верхнее препятствие достаётся только осознанным
-        // перебором взмахов, а не одним лишним.
-        expect(BIRD_START_Y - (pipe.top + BIRD_RADIUS_HITBOX)).toBeGreaterThanOrEqual(90);
-      }
+    /**
+     * Главное требование к кривой: первый в жизни потолок не может быть
+     * строже следующих. Раньше он был — 94.5 px против 154.5, — потому что
+     * упирался в ограничение разброса, идя от нижних препятствий.
+     */
+    expect(tops[0]).toBeGreaterThanOrEqual(Math.max(...tops.slice(1)));
+
+    // Запас на подъём у всех верхних одинаково щедрый.
+    for (const room of tops) {
+      expect(room).toBeGreaterThanOrEqual(140);
     }
 
-    expect(seen.some((entry) => entry.shape === 'bottom')).toBe(true);
-    expect(seen.some((entry) => entry.shape === 'top')).toBe(true);
+    /**
+     * Тесное место переехало на нижнее препятствие — то, что идёт навстречу
+     * верхним. Там это безопасно: опасность — падение, лекарство — взмах,
+     * а лишние взмахи без потолка ничем не грозят.
+     */
+    for (const room of bottoms) {
+      expect(room).toBeGreaterThanOrEqual(90);
+    }
+
+    expect(Math.min(...bottoms)).toBeLessThan(Math.min(...tops));
   });
 
   it('проход над первыми препятствиями заведомо больше запаса на ошибку', () => {
@@ -107,12 +130,17 @@ describe('коллизия при отсутствующей половине', 
    * не прошла бы и первого.
    */
   it('птица у потолка проходит препятствия без потолка и гибнет на первом верхнем', () => {
+    const withoutCeiling = LEVEL_1.warmup.filter((shape) => shape === 'bottom').length;
     const game = started(LEVEL_1, mulberry32(3));
-    const history = run(game, { frames: 1600, control: () => true });
+    const history = run(game, { frames: 2000, control: () => true });
     const shapes = shapesInOrder(history);
 
-    expect(shapes.slice(0, 4)).toEqual(['bottom', 'bottom', 'bottom', 'top']);
-    expect(game.state.score).toBeGreaterThanOrEqual(3);
+    expect(withoutCeiling).toBeGreaterThanOrEqual(3);
+    expect(shapes.slice(0, withoutCeiling + 1)).toEqual([
+      ...Array.from({ length: withoutCeiling }, () => 'bottom'),
+      'top',
+    ]);
+    expect(game.state.score).toBeGreaterThanOrEqual(withoutCeiling);
     expect(game.state.phase).toBe('over');
   });
 

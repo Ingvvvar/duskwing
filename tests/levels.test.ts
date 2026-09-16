@@ -28,7 +28,7 @@ describe('уровень 1 заморожен', () => {
       runwayMs: 2500,
       // Единственное, что добавилось к выверенному конфигу: кривая видов
       // препятствий. Скорость, просвет, разброс, разгон и цель — те же.
-      warmup: ['bottom', 'bottom', 'bottom', 'top', 'top', 'top'],
+      warmup: ['bottom', 'bottom', 'bottom', 'bottom', 'top', 'top', 'top'],
       ramp: null,
       mechanics: {},
       themeId: 'dusk',

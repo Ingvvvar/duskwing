@@ -198,6 +198,7 @@ export class Game {
     const { gapDrift } = this.#config;
     const { movingPipes } = this.#config.mechanics;
     const shape: PipeShape = this.#config.warmup[this.#spawned] ?? 'both';
+    const nextShape: PipeShape = this.#config.warmup[this.#spawned + 1] ?? 'both';
     const gapHeight = this.#gap();
     // Удержание учитывает амплитуду хода: колеблющаяся труба не должна
     // вылезти ни за потолок, ни за землю в крайних точках колебания.
@@ -215,12 +216,23 @@ export class Game {
     // Одностороннее препятствие уходит в край полосы — свободный проход при
     // этом максимальный. При обычной постановке центра худший разброс
     // оставляет новичку 34.5 px на падение вместо 154.5.
+    //
+    // Но последнее препятствие перед сменой вида идёт новому виду навстречу.
+    // Без этого первое препятствие нового вида упирается в ограничение
+    // разброса и оказывается строже последующих: первый в жизни потолок
+    // давал 94.5 px против 154.5 у следующих — обратная кривая обучения.
+    // Тесное место при упреждении переезжает на препятствие СТАРОГО вида, и
+    // это выгодный размен: на нижнем опасность — падение, лекарство — взмах,
+    // а лишние взмахи там безнаказанны; на верхнем паническая реакция
+    // новичка и есть ошибка.
+    const ideal = shape === 'bottom' ? upper : lower;
+    const yielding = shape === 'bottom' ? lower : upper;
     const baseGapCenter =
-      shape === 'bottom'
-        ? upper
-        : shape === 'top'
-          ? lower
-          : lower + roll * Math.max(0, upper - lower);
+      shape === 'both'
+        ? lower + roll * Math.max(0, upper - lower)
+        : nextShape !== shape && nextShape !== 'both'
+          ? yielding
+          : ideal;
     const phase = this.#rng();
 
     this.#lastGapCenter = baseGapCenter;
