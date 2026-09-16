@@ -41,7 +41,7 @@ body {
   padding: max(env(safe-area-inset-top, 0px), 24px) 24px 24px;
   color: #f4efe6;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  background: linear-gradient(180deg, rgb(5 6 14 / 55%), rgb(5 6 14 / 78%));
+  background: linear-gradient(180deg, rgb(5 6 14 / 35%), rgb(5 6 14 / 40%));
   text-align: center;
 }
 
@@ -52,7 +52,7 @@ body {
 
 /* Экран смерти не гасит сцену: следующая попытка начинается отсюда же. */
 .overlay--quiet {
-  background: rgb(5 6 14 / 46%);
+  background: rgb(5 6 14 / 26%);
 }
 
 .title {
@@ -130,19 +130,22 @@ body {
   padding: 13px 16px;
   border: 0;
   border-radius: 12px;
-  background: rgb(244 239 230 / 8%);
+  /* Непрозрачные: контраст оверлея несёт затемнение, а не второй слой
+     полупрозрачности поверх него — вдвоём они давали муть. */
+  background: #151b3d;
   color: #f4efe6;
   font: 500 15px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;
   text-align: left;
 }
 
 .level--open {
-  background: rgb(232 220 192 / 16%);
+  background: #2a3466;
   cursor: pointer;
 }
 
 .level--locked,
 .level--soon {
+  background: #10152f;
   color: #7f7996;
 }
 

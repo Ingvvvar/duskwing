@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
+import { MAX_FRAME_MS } from '../game/constants';
 import { Game } from '../game/Game';
 import { findLevel, LEVEL_1 } from '../game/levels';
 import type { RunOutcome } from '../game/progress';
@@ -13,6 +14,17 @@ import { PixiRenderer } from '../render/pixi/PixiRenderer';
 import type { ProgressApi } from './useProgress';
 
 export type Screen = 'menu' | 'levels' | 'playing';
+
+/**
+ * Окно проглатывания ввода после смерти.
+ *
+ * Игрок, тапающий три раза в секунду, иначе рестартует предсмертным тапом и
+ * собственного счёта не видит — это читается как самопроизвольный перезапуск.
+ * Ввод внутри окна не теряется: он буферизуется и срабатывает в момент, когда
+ * окно закрывается. Бюджет ТЗ в 300 мс от смерти до управляемой попытки при
+ * этом сохраняется.
+ */
+const DEATH_INPUT_WINDOW_MS = 200;
 
 export interface Session {
   readonly screen: Screen;
@@ -94,7 +106,12 @@ export function useGameLoop(
   const frozenRef = useRef(false);
   /** Итог попытки уже записан в прогресс — второй раз не писать. */
   const recordedRef = useRef(false);
+  /** Сколько ещё миллисекунд после смерти ввод проглатывается. */
+  const deathWindowRef = useRef(0);
+  /** Во время окна был ввод: сработает, когда окно закроется. */
+  const bufferedRef = useRef(false);
   const tapRef = useRef<() => void>(() => undefined);
+  const restartRef = useRef<() => void>(() => undefined);
 
   const { update } = progressApi;
 
@@ -143,6 +160,8 @@ export function useGameLoop(
    * Заход на уровень из меню взмаха не делает: там игрок сам выбирает момент.
    */
   const restart = useCallback((): void => {
+    deathWindowRef.current = 0;
+    bufferedRef.current = false;
     beginAttempt(levelRef.current);
     gameRef.current?.flap();
   }, [beginAttempt]);
@@ -199,6 +218,13 @@ export function useGameLoop(
       }
 
       if (game.state.phase === 'over') {
+        if (deathWindowRef.current > 0) {
+          // Окно ещё открыто: ввод не теряем, а откладываем до его конца.
+          bufferedRef.current = true;
+
+          return;
+        }
+
         restart();
 
         return;
@@ -206,6 +232,8 @@ export function useGameLoop(
 
       game.flap();
     };
+
+    restartRef.current = restart;
   }, [openLevels, restart]);
 
   useEffect(() => {
@@ -293,8 +321,22 @@ export function useGameLoop(
         }
 
         if (state.phase !== lastPhase) {
+          if (state.phase === 'over') {
+            deathWindowRef.current = DEATH_INPUT_WINDOW_MS;
+            bufferedRef.current = false;
+          }
+
           lastPhase = state.phase;
           setPhase(state.phase);
+        }
+
+        if (deathWindowRef.current > 0 && state.phase === 'over') {
+          deathWindowRef.current -= Math.min(dtMs, MAX_FRAME_MS);
+
+          if (deathWindowRef.current <= 0 && bufferedRef.current) {
+            bufferedRef.current = false;
+            restartRef.current();
+          }
         }
 
         const config = levelRef.current;
