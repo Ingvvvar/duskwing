@@ -1,0 +1,64 @@
+import { TilingSprite, Texture } from 'pixi.js';
+
+import { GROUND_TOP, WORLD_WIDTH } from '../../../game/constants';
+import { airflowPeriod } from '../../../game/mechanics';
+import type { GameState, LevelConfig, Theme } from '../../../game/types';
+import { createWindTexture } from '../textures';
+
+const MAX_ALPHA = 0.16;
+
+/**
+ * Полосы ветра: телеграф зон `airflow`, а не украшение фона.
+ *
+ * Плитка шириной ровно в один период зон сдвигается на `state.travelledX` —
+ * ту же величину, по которой физика берёт снос. Отсюда параллакс 1.0 и
+ * записанное исключение из контракта читаемости в `parallax.ts`.
+ */
+export class WindLayer {
+  readonly view = new TilingSprite({
+    label: 'wind',
+    texture: Texture.EMPTY,
+    width: WORLD_WIDTH,
+    height: GROUND_TOP,
+    blendMode: 'screen',
+  });
+
+  #texture: Texture | null = null;
+  #period = 0;
+
+  setTheme(theme: Theme, airflow: LevelConfig['mechanics']['airflow']): void {
+    this.#texture?.destroy(true);
+    this.#texture = null;
+
+    if (airflow === undefined || airflow.zones <= 0) {
+      this.view.visible = false;
+      this.view.texture = Texture.EMPTY;
+
+      return;
+    }
+
+    // Восходящий поток холодный, нисходящий тёплый: направление читается
+    // цветом, а не только положением полосы.
+    const texture = createWindTexture(airflow, '#9FE8FF', theme.accent, MAX_ALPHA, GROUND_TOP);
+
+    this.#texture = texture;
+    this.#period = airflowPeriod(airflow);
+    this.view.texture = texture;
+    this.view.visible = true;
+  }
+
+  update(state: GameState): void {
+    if (!this.view.visible) {
+      return;
+    }
+
+    // Ровно travelledX, без коэффициентов: полоса обязана стоять там же, где
+    // поток, который её породил.
+    this.view.tilePosition.x = -(((state.travelledX % this.#period) + this.#period) % this.#period);
+  }
+
+  destroy(): void {
+    this.#texture?.destroy(true);
+    this.#texture = null;
+  }
+}

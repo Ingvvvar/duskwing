@@ -22,6 +22,7 @@ import sys
 import zlib
 
 WORLD_W, WORLD_H, GROUND_TOP = 360, 640, 640 - 92
+FOREGROUND_BAND = 72                # полоса переднего плана над землёй
 BIRD_X, BIRD_CLEARANCE = 104, 15   # птица — игровой слой, в фон не идёт
 SKIP_TOP_CSS = 60                  # полоса, где лежит div счёта
 THRESHOLD = 0.45                   # контракт: фон не выше 45% яркости трубы
@@ -88,7 +89,13 @@ def analyse(path):
     w, h, ch, rows = decode_png(path)
     scale = min(w / WORLD_W, h / WORLD_H)
     x0, y0 = (w - WORLD_W * scale) / 2, (h - WORLD_H * scale) / 2
-    top_y, ground_y = int(y0 + SKIP_TOP_CSS), int(y0 + GROUND_TOP * scale)
+    top_y = int(y0 + SKIP_TOP_CSS)
+    # Нижняя полоса исключается: там по ТЗ живёт передний план, он рисуется
+    # ПОВЕРХ труб и затемняет их основание. Медиана строки от этого проседает,
+    # строка уходит в «просвет», а яркие пиксели самой трубы попадают в «фон».
+    # Просвет в эту полосу не опускается (tests/foreground-band.test.ts),
+    # поэтому фона, видимого сквозь него, там нет вовсе.
+    ground_y = int(y0 + (GROUND_TOP - FOREGROUND_BAND) * scale)
 
     def px(x, y):
         i = x * ch

@@ -1,18 +1,10 @@
 import { Application, Container, Graphics, UPDATE_PRIORITY } from 'pixi.js';
 
-import { GROUND_TOP, MAX_FRAME_MS, STEP_SECONDS, WORLD_HEIGHT, WORLD_WIDTH } from '../../game/constants';
+import { MAX_FRAME_MS, STEP_SECONDS, WORLD_HEIGHT, WORLD_WIDTH } from '../../game/constants';
 import type { GameState, LevelConfig, Renderer, Theme } from '../../game/types';
-import { PARALLAX, WEATHER_PARALLAX } from '../parallax';
 import { createBird } from './entities/Bird';
 import { PipePool } from './entities/Pipes';
-import { CelestialLayer } from './layers/Celestial';
-import { ForegroundLayer } from './layers/Foreground';
-import { GradeLayer } from './layers/Grade';
-import { GroundLayer } from './layers/Ground';
-import { HazeLayer } from './layers/Haze';
-import { RidgeLayer } from './layers/Ridges';
-import { SkyLayer } from './layers/Sky';
-import { WeatherLayer } from './layers/Weather';
+import { Scene } from './Scene';
 
 /** Цвет птицы: в `Theme` его нет, тема задаёт только акцент труб. */
 const BIRD_COLOR = 0xf05d5e;
@@ -20,20 +12,6 @@ const LETTERBOX = 0x05060e;
 
 /** Доля скорости уровня, с которой фон ползёт до первого тапа. */
 const READY_PACE = 0.25;
-
-/**
- * Вертикальная раскладка гребней. В ТЗ её нет: дальний гребень выше и мельче,
- * ближний ниже и крупнее, оба залиты вниз до земли.
- */
-const RIDGE_FAR = { baselineY: GROUND_TOP - 120, tileWidth: 512, detail: 0 } as const;
-
-/**
- * Ближний гребень: вторая октава превращает регулярную волну в рельеф, а
- * явное разрешение 2 снимает зависимость кромки от DPR дисплея — по умолчанию
- * generateTexture берёт renderer.resolution, и на экране без ретины кромка
- * вышла бы мягкой. Дальнему мягкость к месту, он остаётся на умолчании.
- */
-const RIDGE_NEAR = { baselineY: GROUND_TOP - 40, tileWidth: 384, detail: 0.22, resolution: 2 } as const;
 
 interface DebugGlobal {
   __duskwingPixiInstances?: number;
@@ -64,20 +42,22 @@ function trackInstances(delta: number): void {
 export class PixiRenderer implements Renderer {
   #config: LevelConfig;
 
-  readonly #sky = new SkyLayer();
-  readonly #celestial = new CelestialLayer();
-  readonly #ridgeFar = new RidgeLayer('ridge-far');
-  readonly #ridgeNear = new RidgeLayer('ridge-near');
-  readonly #haze = new HazeLayer();
-  readonly #weather = new WeatherLayer();
-  readonly #ground = new GroundLayer();
-  readonly #foreground = new ForegroundLayer();
-  readonly #grade = new GradeLayer();
-
   #app: Application | null = null;
   #world: Container | null = null;
   #bird: Graphics | null = null;
   #pipes: PipePool | null = null;
+
+  /** Слоты фиксируют порядок по z: сцены приходят и уходят внутри них. */
+  readonly #backgroundSlot = new Container({ label: 'background-slot' });
+  readonly #nearSlot = new Container({ label: 'near-slot' });
+  readonly #gradeSlot = new Container({ label: 'grade-slot' });
+
+  #current: Scene | null = null;
+  #next: Scene | null = null;
+  #theme: Theme | null = null;
+  #nextAccent: string | null = null;
+  #fadeMs = 0;
+  #fadeTotalMs = 0;
 
   /**
    * Пройденное фоном расстояние. Величина чисто визуальная, поэтому копится
@@ -85,23 +65,27 @@ export class PixiRenderer implements Renderer {
    */
   #scrollX = 0;
 
-  /** Вид погоды текущей темы: от него зависит её параллакс. */
-  #weatherKind: Theme['weather']['kind'] = 'none';
-
   constructor(config: LevelConfig) {
     this.#config = config;
   }
 
   /**
-   * Конфиг текущего уровня. Из него берутся скорость прокрутки фона и
-   * интерполяция труб, поэтому он обязан меняться при смене уровня, а не
-   * оставаться тем, с которым рендер был создан: иначе земля с параллаксом
-   * 1.0 едет со скоростью первого уровня и отстаёт от труб.
+   * Конфиг текущего уровня. Из него берутся скорость прокрутки фона,
+   * интерполяция труб и зоны для полос ветра, поэтому он обязан меняться при
+   * смене уровня, а не оставаться тем, с которым рендер был создан: иначе
+   * земля с параллаксом 1.0 едет со скоростью первого уровня.
    *
    * Не часть контракта `Renderer`: тот работает с состоянием, а не с уровнем.
    */
   setLevel(config: LevelConfig): void {
     this.#config = config;
+
+    const app = this.#app;
+
+    // Полосы ветра зависят от зон уровня — сцену надо пересобрать под них.
+    if (app !== null && this.#theme !== null) {
+      this.#current?.setTheme(app.renderer, this.#theme, config);
+    }
   }
 
   async init(canvas: HTMLCanvasElement, theme: Theme): Promise<void> {
@@ -122,37 +106,11 @@ export class PixiRenderer implements Renderer {
     const pipes = new PipePool(theme.accent);
     const bird = createBird(BIRD_COLOR);
 
-    // Слои 0–5. Отдельным контейнером — в подходе Б сюда сядет
-    // ColorMatrixFilter, а маска висит на world: вместе на одном контейнере
-    // их держать нельзя, фильтр потечёт в полосы леттербокса.
-    const background = new Container({ label: 'background' });
-
-    background.addChild(
-      this.#sky.view,
-      this.#celestial.view,
-      this.#ridgeFar.view,
-      this.#ridgeNear.view,
-      this.#haze.view,
-      this.#weather.view,
-    );
-
     // Игровой слой всегда выше слоёв фона и никогда не получает фильтров.
     const gameplay = new Container({ label: 'gameplay' });
 
     gameplay.addChild(pipes.container, bird);
-
-    // Земля и передний план соседствуют по z-порядку, между ними ничего нет,
-    // поэтому они идут одним контейнером: тот же экземпляр ColorMatrixFilter
-    // красит их вместе с фоном, а проходов фильтра за кадр остаётся два.
-    // Без общего грейда земля отваливается от фона по цвету на тёмных темах.
-    const near = new Container({ label: 'near' });
-
-    near.addChild(this.#ground.view, this.#foreground.view);
-
-    background.filters = [this.#grade.filter];
-    near.filters = [this.#grade.filter];
-
-    world.addChild(background, gameplay, near, this.#grade.vignette);
+    world.addChild(this.#backgroundSlot, gameplay, this.#nearSlot, this.#gradeSlot);
 
     // Маска по логической сетке. Нужна из-за труб: труба рождается при
     // x = WORLD_WIDTH и своей шириной заходит за правый край мира, то есть
@@ -174,25 +132,45 @@ export class PixiRenderer implements Renderer {
     trackInstances(1);
   }
 
-  /** В подходе А — мгновенная подмена. Кроссфейд приезжает в фазе 5. */
-  setTheme(theme: Theme, _crossfadeMs: number): void {
+  /**
+   * Смена темы. При нулевой длительности — мгновенная подмена, иначе
+   * кроссфейд: новая сцена строится невидимой и за `crossfadeMs` гасит собой
+   * старую. На время перехода живут две сцены, то есть четыре прохода
+   * фильтра вместо двух; бюджет ТЗ писался под геймплей, а переход играется
+   * на экране «уровень пройден», где мир заморожен.
+   */
+  setTheme(theme: Theme, crossfadeMs: number): void {
     const app = this.#app;
 
     if (app === null) {
       return;
     }
 
-    this.#sky.setTheme(theme);
-    this.#celestial.setTheme(theme);
-    this.#ridgeFar.setTheme(app.renderer, theme.ridgeFar, RIDGE_FAR);
-    this.#ridgeNear.setTheme(app.renderer, theme.ridgeNear, RIDGE_NEAR);
-    this.#haze.setTheme(theme);
-    this.#weather.setTheme(theme);
-    this.#ground.setTheme(theme);
-    this.#foreground.setTheme(theme);
-    this.#grade.setTheme(theme);
-    this.#pipes?.setColor(theme.accent);
-    this.#weatherKind = theme.weather.kind;
+    // Переход, не успевший закончиться, завершается мгновенно: двух
+    // одновременных кроссфейдов не бывает.
+    this.#finishFade();
+    this.#theme = theme;
+
+    if (this.#current === null || crossfadeMs <= 0) {
+      const scene = this.#current ?? this.#createScene();
+
+      scene.setTheme(app.renderer, theme, this.#config);
+      scene.setAlpha(1);
+      this.#current = scene;
+      this.#pipes?.setColor(theme.accent);
+
+      return;
+    }
+
+    const next = this.#createScene();
+
+    next.setTheme(app.renderer, theme, this.#config);
+    next.setAlpha(0);
+
+    this.#next = next;
+    this.#nextAccent = theme.accent;
+    this.#fadeMs = 0;
+    this.#fadeTotalMs = crossfadeMs;
   }
 
   draw(state: GameState, dtMs: number): void {
@@ -220,18 +198,9 @@ export class PixiRenderer implements Renderer {
 
     this.#scrollX += advance;
 
-    // Слой 0 с параллаксом 0 не прокручивается вовсе.
-    this.#celestial.scroll(this.#scrollX * PARALLAX.celestial);
-    this.#ridgeFar.scroll(this.#scrollX * PARALLAX.ridgeFar);
-    this.#ridgeNear.scroll(this.#scrollX * PARALLAX.ridgeNear);
-    this.#haze.scroll(this.#scrollX * PARALLAX.haze);
-    this.#ground.scroll(this.#scrollX * PARALLAX.ground);
-    this.#foreground.scroll(this.#scrollX * PARALLAX.foreground);
-
-    const weatherParallax =
-      this.#weatherKind === 'none' ? 0 : WEATHER_PARALLAX[this.#weatherKind];
-
-    this.#weather.update((stepMs * pace) / 1000, advance * weatherParallax);
+    this.#current?.update(state, dtMs, this.#scrollX, advance);
+    this.#next?.update(state, dtMs, this.#scrollX, advance);
+    this.#advanceFade(stepMs);
   }
 
   resize(width: number, height: number): void {
@@ -287,17 +256,10 @@ export class PixiRenderer implements Renderer {
       return;
     }
 
-    // Текстуры слоёв сняты вручную: они процедурные и не проходят через
-    // Assets, поэтому уборка сцены о них ничего не знает.
-    this.#sky.destroy();
-    this.#celestial.destroy();
-    this.#ridgeFar.destroy();
-    this.#ridgeNear.destroy();
-    this.#haze.destroy();
-    this.#weather.destroy();
-    this.#ground.destroy();
-    this.#foreground.destroy();
-    this.#grade.destroy();
+    this.#next?.destroy();
+    this.#next = null;
+    this.#current?.destroy();
+    this.#current = null;
     this.#pipes?.destroy();
 
     // removeView: false — канвасом владеет React, забирать его из DOM нельзя.
@@ -314,5 +276,54 @@ export class PixiRenderer implements Renderer {
     this.#pipes = null;
 
     trackInstances(-1);
+  }
+
+  #createScene(): Scene {
+    const scene = new Scene();
+
+    this.#backgroundSlot.addChild(scene.background);
+    this.#nearSlot.addChild(scene.near);
+    this.#gradeSlot.addChild(scene.grade.vignette);
+
+    return scene;
+  }
+
+  #advanceFade(stepMs: number): void {
+    const next = this.#next;
+
+    if (next === null) {
+      return;
+    }
+
+    this.#fadeMs += stepMs;
+
+    const t = this.#fadeTotalMs <= 0 ? 1 : Math.min(1, this.#fadeMs / this.#fadeTotalMs);
+
+    this.#current?.setAlpha(1 - t);
+    next.setAlpha(t);
+
+    if (t >= 1) {
+      this.#finishFade();
+    }
+  }
+
+  #finishFade(): void {
+    const next = this.#next;
+
+    if (next === null) {
+      return;
+    }
+
+    this.#current?.destroy();
+    this.#current = next;
+    this.#next = null;
+    next.setAlpha(1);
+
+    if (this.#nextAccent !== null) {
+      // Цвет труб меняется разом в конце перехода: плавно смешивать его
+      // нечем, а на середине подмена была бы заметнее всего.
+      this.#pipes?.setColor(this.#nextAccent);
+      this.#nextAccent = null;
+    }
   }
 }

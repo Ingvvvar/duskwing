@@ -3,12 +3,12 @@ import type { RefObject } from 'react';
 
 import { MAX_FRAME_MS } from '../game/constants';
 import { Game } from '../game/Game';
-import { findLevel, LEVEL_1 } from '../game/levels';
+import { ENDLESS, findLevel, LEVEL_1 } from '../game/levels';
 import type { RunOutcome } from '../game/progress';
 import { recordAttempt, recordRun, resolveOutcome, shouldShowHint } from '../game/progress';
 import { mulberry32 } from '../game/rng';
 import type { Rng } from '../game/rng';
-import { DEBUG_THEME, DUSK } from '../game/themes';
+import { DEBUG_THEME, DUSK, endlessTheme, THEMES } from '../game/themes';
 import type { GamePhase, LevelConfig, Theme } from '../game/types';
 import { PixiRenderer } from '../render/pixi/PixiRenderer';
 import type { ProgressApi } from './useProgress';
@@ -39,17 +39,40 @@ export interface Session {
   readonly restart: () => void;
 }
 
+/** Длительность кроссфейда тем на экране «уровень пройден» (TASK.md). */
+const CROSSFADE_MS = 700;
+
 /**
- * Отладочная тема доступна только в деве. В проде `import.meta.env.DEV`
- * схлопывается в `false`, ветка становится мёртвой, и `DEBUG_THEME` выпадает
- * из бандла вместе с ней.
+ * Дев-переключатель `?theme=<id>`: любая тема плюс отладочная. Нужен, чтобы
+ * снимать читаемость по пятой теме, не проходя ради этого четыре уровня.
+ *
+ * Только в деве: в проде `import.meta.env.DEV` схлопывается в `false`, ветка
+ * становится мёртвой, и `DEBUG_THEME` выпадает из бандла вместе с ней.
  */
-function readTheme(): Theme {
-  if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('theme') === 'debug') {
-    return DEBUG_THEME;
+function readThemeOverride(): Theme | null {
+  if (!import.meta.env.DEV) {
+    return null;
   }
 
-  return DUSK;
+  const id = new URLSearchParams(window.location.search).get('theme');
+
+  if (id === null) {
+    return null;
+  }
+
+  return id === 'debug' ? DEBUG_THEME : (THEMES[id] ?? null);
+}
+
+/**
+ * Тема уровня. У бесконечного режима она не задана заранее: палитра и грейд
+ * перетекают от `dusk` к `void` по счёту.
+ */
+function themeFor(level: LevelConfig, score: number): Theme {
+  if (level.id === ENDLESS.id) {
+    return endlessTheme(score);
+  }
+
+  return THEMES[level.themeId] ?? DUSK;
 }
 
 /**
@@ -145,9 +168,11 @@ export function useGameLoop(
       }
 
       levelRef.current = config;
-      // Скорость прокрутки фона берётся из конфига уровня — рендер обязан
-      // узнать о смене сразу, а не при следующем монтировании.
+      // Скорость прокрутки фона и зоны для полос ветра берутся из конфига
+      // уровня — рендер обязан узнать о смене сразу, а не при следующем
+      // монтировании.
       rendererRef.current?.setLevel(config);
+      rendererRef.current?.setTheme(readThemeOverride() ?? themeFor(config, 0), 0);
       screenRef.current = 'playing';
       setLevel(config);
       setScreen('playing');
@@ -286,7 +311,7 @@ export function useGameLoop(
 
       const created = new PixiRenderer(levelRef.current);
 
-      await created.init(canvas, readTheme());
+      await created.init(canvas, readThemeOverride() ?? themeFor(levelRef.current, 0));
 
       if (cancelled) {
         // Размонтировались, пока шёл await: на канвас ничего не вешаем.
@@ -325,6 +350,12 @@ export function useGameLoop(
         if (state.score !== lastScore) {
           lastScore = state.score;
           setScore(state.score);
+
+          // Бесконечный режим: палитра и грейд перетекают по счёту. Смена
+          // мгновенная, кроссфейд здесь был бы шагами вместо перетекания.
+          if (levelRef.current.id === ENDLESS.id && readThemeOverride() === null) {
+            created.setTheme(endlessTheme(state.score), 0);
+          }
         }
 
         if (state.phase !== lastPhase) {
@@ -352,6 +383,14 @@ export function useGameLoop(
         if (!frozen && reachedTarget) {
           // Геймплей на экране «уровень пройден» не идёт (TASK.md, раздел 4).
           frozenRef.current = true;
+
+          // Переход к теме следующего уровня играется здесь: мир заморожен,
+          // и 700 мс кроссфейда никому не мешают.
+          const upcoming = findLevel(config.id + 1);
+
+          if (upcoming !== undefined && readThemeOverride() === null) {
+            created.setTheme(themeFor(upcoming, 0), CROSSFADE_MS);
+          }
         }
 
         if (!recordedRef.current && (reachedTarget || state.phase === 'over')) {

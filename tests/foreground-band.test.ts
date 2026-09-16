@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { FLYABLE_CENTER, FOREGROUND_BAND_HEIGHT, GROUND_TOP } from '../src/game/constants';
-import { LEVELS } from '../src/game/levels';
+import { PLAYABLE } from '../src/game/levels';
 
 /**
  * Передний план живёт в нижних `FOREGROUND_BAND_HEIGHT` px над линией земли.
@@ -13,7 +13,7 @@ import { LEVELS } from '../src/game/levels';
  * центр просвета зажат полосой ±gapDrift вокруг центра лётной зоны и
  * удержанием внутри самой зоны.
  */
-function lowestGapBottom(level: (typeof LEVELS)[number]): number {
+function lowestGapBottom(level: (typeof PLAYABLE)[number]): number {
   // Амплитуда хода трубы входит в запас: удержание в лётной зоне считает её
   // так же, поэтому нижняя кромка просвета опускается на amplitude ниже
   // своей базы в крайней точке колебания.
@@ -26,14 +26,14 @@ function lowestGapBottom(level: (typeof LEVELS)[number]): number {
 describe('полоса переднего плана', () => {
   it('просвет ни на одном уровне не опускается в полосу', () => {
     const limit = GROUND_TOP - FOREGROUND_BAND_HEIGHT;
-    const offenders = LEVELS.filter((level) => lowestGapBottom(level) > limit).map(
+    const offenders = PLAYABLE.filter((level) => lowestGapBottom(level) > limit).map(
       (level) => `${level.name}: ${String(lowestGapBottom(level))} > ${String(limit)}`,
     );
 
     expect(offenders).toEqual([]);
   });
 
-  it('проверка идёт по всем пяти уровням, а не по одному', () => {
-    expect(LEVELS).toHaveLength(5);
+  it('проверка идёт по всем уровням и по бесконечному режиму', () => {
+    expect(PLAYABLE).toHaveLength(6);
   });
 });

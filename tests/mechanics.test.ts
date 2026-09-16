@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BIRD_X, GROUND_TOP, MAX_FALL_SPEED, STEP_MS, STEP_SECONDS } from '../src/game/constants';
-import { LEVEL_1, LEVEL_3, LEVEL_4, LEVELS } from '../src/game/levels';
+import { LEVEL_1, LEVEL_3, LEVEL_4, PLAYABLE } from '../src/game/levels';
 import { airflowAt, pipeGapCenterAt } from '../src/game/mechanics';
 import { mulberry32 } from '../src/game/rng';
 import type { LevelConfig } from '../src/game/types';
@@ -94,7 +94,7 @@ describe('проходимость при сносе', () => {
    * проходится с запасом 3.76 px — она стоит там, где её поставило ТЗ.
    */
   it('один взмах перекрывает вертикальный шаг между просветами', () => {
-    const offenders = LEVELS.filter((level) => {
+    const offenders = PLAYABLE.filter((level) => {
       const strength = level.mechanics.airflow?.strength ?? 0;
       const rise = level.flapVelocity ** 2 / (2 * (level.gravity + strength));
 
@@ -102,7 +102,7 @@ describe('проходимость при сносе', () => {
     }).map((level) => level.name);
 
     expect(offenders).toEqual([]);
-    expect(LEVELS.length).toBeGreaterThan(0);
+    expect(PLAYABLE).toHaveLength(6);
   });
 });
 

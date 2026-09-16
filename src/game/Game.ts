@@ -10,7 +10,7 @@ import {
   STEP_SECONDS,
   WORLD_WIDTH,
 } from './constants';
-import { airflowAt, pipeGapCenterAt } from './mechanics';
+import { airflowAt, FLASH_MAX_MS, flashAllowed, pipeGapCenterAt } from './mechanics';
 import { circleHitsRect, hitsGround, integrateVertical, pipeRects, resolveCeiling } from './physics';
 import type { Rng } from './rng';
 import type { GamePhase, GameState, LevelConfig, Pipe } from './types';
@@ -43,6 +43,8 @@ export class Game {
   #travelledX = 0;
   /** Сколько труб уже родилось. Шаг разгона `ramp` считается по ним. */
   #spawned = 0;
+  /** Момент появления последней трубы. null — труб ещё не было. */
+  #lastSpawnMs: number | null = null;
 
   constructor(config: LevelConfig, rng: Rng) {
     this.#config = config;
@@ -60,6 +62,7 @@ export class Game {
       score: this.#score,
       elapsedMs: this.#elapsedMs,
       travelledX: this.#travelledX,
+      flashAllowed: flashAllowed(this.#msSinceLastPipe(), this.#msToNextPipe(), FLASH_MAX_MS),
       pipes: this.#pipes,
     };
   }
@@ -209,6 +212,7 @@ export class Game {
     const phase = this.#rng();
 
     this.#lastGapCenter = baseGapCenter;
+    this.#lastSpawnMs = this.#elapsedMs;
     this.#spawned += 1;
     const id = this.#nextPipeId;
     this.#nextPipeId += 1;
@@ -222,6 +226,29 @@ export class Game {
       gapHeight,
       scored: false,
     };
+  }
+
+  #msSinceLastPipe(): number {
+    return this.#lastSpawnMs === null
+      ? Number.POSITIVE_INFINITY
+      : this.#elapsedMs - this.#lastSpawnMs;
+  }
+
+  /**
+   * Через сколько в кадре появится следующая труба. Пока труб нет — остаток
+   * разгона; дальше — время, за которое последняя труба дойдёт до порога
+   * рождения следующей на текущей скорости.
+   */
+  #msToNextPipe(): number {
+    const last = this.#pipes[this.#pipes.length - 1];
+
+    if (last === undefined) {
+      return Math.max(0, this.#config.runwayMs - this.#elapsedMs);
+    }
+
+    const distance = last.x - (WORLD_WIDTH - this.#config.pipeSpacing);
+
+    return Math.max(0, (distance / this.#speed()) * 1000);
   }
 
   #hitsAnyPipe(): boolean {

@@ -17,7 +17,8 @@ export function Hud({ score, target, showHint }: HudProps): ReactElement {
     <div className="hud">
       <div className="hud__score">
         {score}
-        <span className="hud__target"> / {target}</span>
+        {/* У бесконечного режима цели нет: показывать «/ Infinity» незачем. */}
+        {Number.isFinite(target) ? <span className="hud__target"> / {target}</span> : null}
       </div>
       {showHint ? <p className="hud__hint">Тап или пробел — взмах</p> : null}
     </div>

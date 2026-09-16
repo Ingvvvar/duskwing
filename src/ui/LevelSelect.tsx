@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-import { findLevel, LEVEL_ROSTER } from '../game/levels';
+import { ENDLESS, findLevel, LEVEL_ROSTER } from '../game/levels';
 import type { Progress } from '../game/progress';
 import { isLevelUnlocked } from '../game/progress';
 
@@ -67,6 +67,23 @@ export function LevelSelect({ progress, onPick, onBack }: LevelSelectProps): Rea
           );
         })}
       </ul>
+      {isLevelUnlocked(progress, ENDLESS.id) ? (
+        <button
+          className="level level--open level--endless"
+          type="button"
+          onClick={() => {
+            onPick(ENDLESS.id);
+          }}
+        >
+          <span className="level__index">∞</span>
+          <span className="level__name">{ENDLESS.name}</span>
+          <span className="level__note">
+            {(progress.bestScores[String(ENDLESS.id)] ?? 0) > 0
+              ? `рекорд ${String(progress.bestScores[String(ENDLESS.id)] ?? 0)}`
+              : 'играть'}
+          </span>
+        </button>
+      ) : null}
       <button className="button button--quiet" type="button" onClick={onBack}>
         Назад
       </button>

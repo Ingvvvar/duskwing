@@ -143,6 +143,11 @@ body {
   cursor: pointer;
 }
 
+.level--endless {
+  width: min(320px, 100%);
+  background: #2a2350;
+}
+
 .level--locked,
 .level--soon {
   background: #10152f;

@@ -25,6 +25,8 @@ export class RidgeLayer {
   readonly view: TilingSprite;
 
   #texture: Texture | null = null;
+  /** Ключ формы силуэта: пока он тот же, текстуру пересобирать не за чем. */
+  #shape = '';
 
   constructor(label: string) {
     this.view = new TilingSprite({
@@ -36,10 +38,22 @@ export class RidgeLayer {
   }
 
   setTheme(renderer: Renderer, config: Theme['ridgeFar'], layout: RidgeLayout): void {
+    // Цвет задаётся тинтом, а силуэт рисуется белым. В бесконечном режиме
+    // тема меняется на каждом очке, и пересобирать геометрию ради одного
+    // лишь цвета — это снятие текстуры через generateTexture каждые пару
+    // секунд на ровном месте.
+    this.view.tint = config.color;
+
+    const shape = `${String(config.amplitude)}/${String(config.roughness)}/${String(config.seed)}/${String(layout.tileWidth)}`;
+
+    if (shape === this.#shape && this.#texture !== null) {
+      return;
+    }
+
     const top = layout.baselineY - config.amplitude;
     const tileHeight = GROUND_TOP - top;
     const texture = createRidgeTexture(renderer, {
-      color: config.color,
+      color: '#ffffff',
       amplitude: config.amplitude,
       roughness: config.roughness,
       seed: config.seed,
@@ -51,6 +65,7 @@ export class RidgeLayer {
 
     this.#texture?.destroy(true);
     this.#texture = texture;
+    this.#shape = shape;
 
     this.view.texture = texture;
     this.view.y = top;

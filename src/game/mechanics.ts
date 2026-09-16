@@ -48,3 +48,53 @@ export function pipeGapCenterAt(
     moving.amplitude * Math.sin(2 * Math.PI * (elapsedMs / moving.periodMs + phase))
   );
 }
+
+/**
+ * Ширина одного полного периода зон в мировых единицах: восходящая зона плюс
+ * нисходящая. По ней строится плитка полос ветра — плитка, равная периоду и
+ * сдвигаемая на `travelledX`, попадает в зоны точно, без второй формулы.
+ */
+export function airflowPeriod(airflow: Airflow): number {
+  return (2 * WORLD_WIDTH) / airflow.zones;
+}
+
+/** Нормированная сила потока, −1…1. Полосы ветра рисуются по ней. */
+export function airflowNormalised(worldX: number, airflow: Airflow): number {
+  return airflow.strength === 0 ? 0 : airflowAt(worldX, airflow) / airflow.strength;
+}
+
+/** Вспышка молнии не длиннее этого (TASK.md, контракт читаемости). */
+export const FLASH_MAX_MS = 120;
+/** И не ярче этого. */
+export const FLASH_MAX_ALPHA = 0.25;
+/** Запретная зона вокруг появления новой трубы в кадре. */
+export const FLASH_PIPE_GUARD_MS = 400;
+
+/**
+ * Можно ли начать вспышку прямо сейчас.
+ *
+ * Проверяется **всё окно вспышки**, а не только момент старта: флаг,
+ * разрешивший старт, ничего не говорит о том, что будет через 120 мс, а
+ * труба за это время успевает войти в кадр — и запрет нарушится в середине
+ * вспышки, там, где его никто не проверял.
+ *
+ * Запрет симметричный: вспышка за мгновение до появления трубы мешает так же,
+ * как и сразу после.
+ *
+ * @param msSinceLastPipe сколько прошло с появления последней трубы
+ * @param msToNextPipe через сколько появится следующая
+ * @param durationMs длительность вспышки, которую собираются начать
+ */
+export function flashAllowed(
+  msSinceLastPipe: number,
+  msToNextPipe: number,
+  durationMs: number,
+): boolean {
+  if (durationMs > FLASH_MAX_MS) {
+    return false;
+  }
+
+  return (
+    msSinceLastPipe >= FLASH_PIPE_GUARD_MS && msToNextPipe >= durationMs + FLASH_PIPE_GUARD_MS
+  );
+}

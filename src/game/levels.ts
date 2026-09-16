@@ -102,6 +102,33 @@ export const LEVEL_5: LevelConfig = {
 export const LEVELS: readonly LevelConfig[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5];
 
 /**
+ * Бесконечный режим. Тот же движок и тот же конфиг уровня, только с плавным
+ * разгоном и без цели: `target` бесконечен, поэтому «уровень пройден» не
+ * наступает никогда.
+ *
+ * В `LEVELS` намеренно не входит: это не шестой уровень, а режим. Открывается
+ * после прохождения пятого — `isLevelUnlocked` по id 6 сверяется именно с ним.
+ */
+export const ENDLESS: LevelConfig = {
+  id: 6,
+  name: 'Бесконечность',
+  target: Number.POSITIVE_INFINITY,
+  gravity: 1450,
+  flapVelocity: -430,
+  pipeSpeed: 130,
+  pipeGap: 200,
+  pipeSpacing: 255,
+  gapDrift: 55,
+  runwayMs: 2500,
+  ramp: { speedPerPipe: 0.5, gapPerPipe: 0.45, minGap: 145 },
+  mechanics: {},
+  themeId: 'endless',
+};
+
+/** Всё, во что можно играть: пять уровней плюс бесконечный режим. */
+export const PLAYABLE: readonly LevelConfig[] = [...LEVELS, ENDLESS];
+
+/**
  * Реестр всех пяти уровней из раздела 3 TASK.md — только id и имя.
  *
  * Нужен выбору уровня: карточки показываются для всех пяти, а конфиги 2–5
@@ -116,7 +143,7 @@ export const LEVEL_ROSTER: readonly { readonly id: number; readonly name: string
   { id: 5, name: 'Пустота' },
 ];
 
-/** Конфиг уровня, если он уже реализован. */
+/** Конфиг уровня или режима, если он уже реализован. */
 export function findLevel(id: number): LevelConfig | undefined {
-  return LEVELS.find((level) => level.id === id);
+  return PLAYABLE.find((level) => level.id === id);
 }
