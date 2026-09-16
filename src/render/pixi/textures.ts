@@ -584,21 +584,39 @@ function drawCap(
     context.fillStyle = bright;
     context.fillRect(left, edge - (capAtTop ? 0 : 3), width, 3);
   } else if (look.kind === 'slab') {
-    // Ступень: плита с выраженной фаской.
+    // Плита: выраженная ступень с фаской и тенью под ней. Кромка — главное,
+    // что отличает эту тему, поэтому она читается в три слоя.
     context.fillStyle = dark;
-    context.fillRect(left, edge + inward * 6, width, look.capHeight);
+    context.fillRect(left, edge + inward * 9, width, look.capHeight);
+    context.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    context.fillRect(left, edge + inward * 7, width, 3);
     context.fillStyle = bright;
-    context.fillRect(left, edge - (capAtTop ? 0 : 3), width, 3);
+    context.fillRect(left, edge - (capAtTop ? 0 : 6), width, 6);
+    context.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    context.fillRect(left, edge - (capAtTop ? 0 : 2), width, 2);
   } else if (look.kind === 'monolith') {
-    // Скол: рваная кромка.
+    // Скол: рваная кромка. Зубцы глубокие и разной высоты — мелкая пила
+    // на этой высоте читалась как ровная линия.
     context.fillStyle = dark;
     context.beginPath();
     context.moveTo(left, edge);
-    for (let x = left; x <= left + width; x += 8) {
-      context.lineTo(x, edge + inward * (2 + random() * 9));
+    for (let x = left; x <= left + width; x += 5) {
+      context.lineTo(x, edge + inward * (3 + random() * 17));
     }
     context.lineTo(left + width, edge + inward * look.capHeight);
     context.lineTo(left, edge + inward * look.capHeight);
+    context.closePath();
+    context.fill();
+
+    // Второй ряд сколов светлее — кромка получает глубину, а не силуэт.
+    context.fillStyle = 'rgba(255, 255, 255, 0.16)';
+    context.beginPath();
+    context.moveTo(left, edge + inward * 2);
+    for (let x = left; x <= left + width; x += 7) {
+      context.lineTo(x, edge + inward * (4 + random() * 10));
+    }
+    context.lineTo(left + width, edge + inward * 12);
+    context.lineTo(left, edge + inward * 12);
     context.closePath();
     context.fill();
   } else if (look.kind === 'spire') {

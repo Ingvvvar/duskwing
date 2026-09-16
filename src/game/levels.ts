@@ -17,6 +17,13 @@ export const LEVEL_1: LevelConfig = {
   pipeSpacing: 260,
   gapDrift: 60,
   runwayMs: 2500,
+  /**
+   * Кривая видов препятствий: три без потолка, три без пола, дальше обычный
+   * просвет. Растёт не сложность — скорость и просвет постоянны, — а вид
+   * препятствия. Первые три без потолка потому, что частые взмахи новичка
+   * там безнаказанны: именно ими он и отвечает на панику.
+   */
+  warmup: ['bottom', 'bottom', 'bottom', 'top', 'top', 'top'],
   ramp: null,
   mechanics: {},
   themeId: 'dusk',
@@ -34,6 +41,7 @@ export const LEVEL_2: LevelConfig = {
   pipeSpacing: 250,
   gapDrift: 58,
   runwayMs: 2200,
+  warmup: [],
   ramp: null,
   mechanics: {},
   themeId: 'night',
@@ -57,6 +65,7 @@ export const LEVEL_3: LevelConfig = {
   pipeSpacing: 245,
   gapDrift: 55,
   runwayMs: 2000,
+  warmup: [],
   ramp: null,
   mechanics: { movingPipes: { amplitude: 26, periodMs: 2600 } },
   themeId: 'storm',
@@ -74,6 +83,7 @@ export const LEVEL_4: LevelConfig = {
   pipeSpacing: 250,
   gapDrift: 48,
   runwayMs: 2000,
+  warmup: [],
   ramp: { speedPerPipe: 0.6, gapPerPipe: 0.5, minGap: 160 },
   mechanics: { airflow: { zones: 3, strength: 220 } },
   themeId: 'canyon',
@@ -91,6 +101,7 @@ export const LEVEL_5: LevelConfig = {
   pipeSpacing: 240,
   gapDrift: 42,
   runwayMs: 2000,
+  warmup: [],
   ramp: { speedPerPipe: 0.8, gapPerPipe: 0.7, minGap: 140 },
   mechanics: {
     movingPipes: { amplitude: 30, periodMs: 2200 },
@@ -120,6 +131,7 @@ export const ENDLESS: LevelConfig = {
   pipeSpacing: 255,
   gapDrift: 55,
   runwayMs: 2500,
+  warmup: [],
   ramp: { speedPerPipe: 0.5, gapPerPipe: 0.45, minGap: 145 },
   mechanics: {},
   themeId: 'endless',

@@ -13,7 +13,7 @@ import {
 import { airflowAt, FLASH_MAX_MS, flashAllowed, pipeGapCenterAt } from './mechanics';
 import { circleHitsRect, hitsGround, integrateVertical, pipeRects, resolveCeiling } from './physics';
 import type { Rng } from './rng';
-import type { GamePhase, GameState, LevelConfig, Pipe } from './types';
+import type { GamePhase, GameState, LevelConfig, Pipe, PipeShape } from './types';
 
 /**
  * Конечный автомат и шаг симуляции.
@@ -197,6 +197,7 @@ export class Game {
   #spawnPipe(): Pipe {
     const { gapDrift } = this.#config;
     const { movingPipes } = this.#config.mechanics;
+    const shape: PipeShape = this.#config.warmup[this.#spawned] ?? 'both';
     const gapHeight = this.#gap();
     // Удержание учитывает амплитуду хода: колеблющаяся труба не должна
     // вылезти ни за потолок, ни за землю в крайних точках колебания.
@@ -208,7 +209,18 @@ export class Game {
     //   просвет целиком внутри лётной зоны с запасом на колебание.
     const lower = Math.max(FLYABLE_CENTER - gapDrift, this.#lastGapCenter - gapDrift, margin);
     const upper = Math.min(FLYABLE_CENTER + gapDrift, this.#lastGapCenter + gapDrift, GROUND_TOP - margin);
-    const baseGapCenter = lower + this.#rng() * Math.max(0, upper - lower);
+    // Бросок делается всегда, даже когда результат не нужен: так поток rng
+    // не зависит от кривой видов, и раскладка по сиду остаётся прежней.
+    const roll = this.#rng();
+    // Одностороннее препятствие уходит в край полосы — свободный проход при
+    // этом максимальный. При обычной постановке центра худший разброс
+    // оставляет новичку 34.5 px на падение вместо 154.5.
+    const baseGapCenter =
+      shape === 'bottom'
+        ? upper
+        : shape === 'top'
+          ? lower
+          : lower + roll * Math.max(0, upper - lower);
     const phase = this.#rng();
 
     this.#lastGapCenter = baseGapCenter;
@@ -225,6 +237,7 @@ export class Game {
       phase,
       gapHeight,
       scored: false,
+      shape,
     };
   }
 
@@ -255,8 +268,14 @@ export class Game {
     for (const pipe of this.#pipes) {
       const [top, bottom] = pipeRects(pipe.x, pipe.gapCenter, pipe.gapHeight);
 
+      // Отсутствующая половина не проверяется. Прямоугольник присутствующей
+      // при этом ровно тот же, что и всегда.
+      if (pipe.shape !== 'bottom' && circleHitsRect(BIRD_X, this.#birdY, BIRD_RADIUS_HITBOX, top)) {
+        return true;
+      }
+
       if (
-        circleHitsRect(BIRD_X, this.#birdY, BIRD_RADIUS_HITBOX, top) ||
+        pipe.shape !== 'top' &&
         circleHitsRect(BIRD_X, this.#birdY, BIRD_RADIUS_HITBOX, bottom)
       ) {
         return true;

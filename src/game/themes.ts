@@ -37,7 +37,7 @@ export const NIGHT: Theme = {
   foreground: { kind: 'grass', blur: 3 },
   grade: { saturation: 0.85, brightness: 1, tint: '#C8D8FF', vignette: 0.24 },
   accent: '#D9E2F5',
-  obstacle: { kind: 'slab', capHeight: 12, capOverhang: 6, decor: 'grooves', edgeSoftness: 7 },
+  obstacle: { kind: 'slab', capHeight: 17, capOverhang: 7, decor: 'grooves', edgeSoftness: 7 },
 };
 
 /** Гроза: светила нет, дождь и вспышки, сильно обесцвеченный грейд. */
@@ -53,7 +53,7 @@ export const STORM: Theme = {
   foreground: { kind: 'streaks', blur: 2 },
   grade: { saturation: 0.65, brightness: 0.98, tint: '#D6E2EC', vignette: 0.3 },
   accent: '#E6ECEF',
-  obstacle: { kind: 'monolith', capHeight: 16, capOverhang: 10, decor: 'cracks', edgeSoftness: 8 },
+  obstacle: { kind: 'monolith', capHeight: 22, capOverhang: 10, decor: 'cracks', edgeSoftness: 8 },
 };
 
 /**

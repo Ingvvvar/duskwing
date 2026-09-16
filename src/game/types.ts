@@ -44,6 +44,14 @@ export interface Theme {
 /** Состояние автомата игры. Цель уровня сюда не входит: её сверяет UI. */
 export type GamePhase = 'ready' | 'play' | 'over';
 
+/**
+ * Вид препятствия: обе половины, только верхняя или только нижняя.
+ *
+ * Отсутствующая половина не участвует ни в коллизии, ни в отрисовке.
+ * Прямоугольник присутствующей — тот же самый, ни на пиксель другой.
+ */
+export type PipeShape = 'both' | 'top' | 'bottom';
+
 /** Труба как значение: за время жизни не мутируется, а пересобирается. */
 export interface Pipe {
   /** Сквозной номер. По нему тесты опознают трубу после ухода за экран. */
@@ -60,6 +68,7 @@ export interface Pipe {
   readonly gapHeight: number;
   /** Очко за трубу засчитывается ровно один раз — этим флагом. */
   readonly scored: boolean;
+  readonly shape: PipeShape;
 }
 
 /** Снимок симуляции. Всё только на чтение. */
@@ -107,6 +116,14 @@ export interface LevelConfig {
   pipeSpacing: number;
   gapDrift: number;         // предел и разброса от центра, и расхождения соседей, px
   runwayMs: number;         // пауза до первой трубы
+  /**
+   * Виды препятствий в начале уровня, по порядку. За пределами массива —
+   * обычный просвет, пустой массив означает «все обычные».
+   *
+   * Одностороннее препятствие ставится в край своей полосы, чтобы свободный
+   * проход был максимальным: это обучение, а не сложность.
+   */
+  warmup: readonly PipeShape[];
   ramp: { speedPerPipe: number; gapPerPipe: number; minGap: number } | null;
   mechanics: {
     movingPipes?: { amplitude: number; periodMs: number };

@@ -99,6 +99,10 @@ export class PipePool {
     const bottom = this.#bottom;
 
     view.container.visible = true;
+    // Отсутствующая половина не рисуется. Прямоугольник присутствующей при
+    // этом тот же самый: коллизия про вид препятствия ничего не знает.
+    view.top.visible = pipe.shape !== 'bottom';
+    view.bottom.visible = pipe.shape !== 'top';
 
     if (top === null || bottom === null) {
       return view;
