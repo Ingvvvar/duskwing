@@ -1,8 +1,43 @@
 import { Container, Graphics } from 'pixi.js';
 
-import { BIRD_X, MAX_FALL_SPEED } from '../../../game/constants';
+import { BIRD_RADIUS_VISUAL, BIRD_X, MAX_FALL_SPEED } from '../../../game/constants';
 import { mulberry32 } from '../../../game/rng';
 import type { GameState } from '../../../game/types';
+
+/**
+ * Плотный силуэт: тело, голова, клюв. Размеры выражены через
+ * `BIRD_RADIUS_VISUAL`, а не числами, потому что это контракт, а не
+ * пропорция. Плотное не должно выходить за хитбокс больше чем на 3 px —
+ * иначе игрок видит наложение на препятствие без смерти, — и визуальный
+ * радиус (13 = хитбокс 10.5 плюс 2.5) и есть та граница. Литералами эта
+ * связь теряется при первой же правке пропорций.
+ *
+ * Крыльев и хвоста здесь нет намеренно: они мягкие и крупнее свободно.
+ */
+const DENSE = {
+  /** Тело: горизонтальный радиус равен визуальному радиусу птицы. */
+  bodyRadiusX: BIRD_RADIUS_VISUAL,
+  /** По вертикали тело сплющено: шар не читается как летящая птица. */
+  bodyRadiusY: BIRD_RADIUS_VISUAL - 3,
+  /** Смещение центра головы от центра тела. */
+  headX: 6,
+  headY: -3.5,
+  /** Зазор головы до предела визуального радиуса. */
+  headClearance: 0.45,
+} as const;
+
+/**
+ * Радиус головы — это остаток визуального радиуса после выноса её центра,
+ * а не самостоятельное число: сдвинешь голову — радиус сам подберётся так,
+ * чтобы она не высунулась за предел. Вынос hypot(6, 3.5) = 6.946, значит на
+ * голову остаётся 13 − 6.946 = 6.054, минус зазор 0.45 → 5.604. Досягаемость
+ * головы при этом ровно 12.55, то есть 2.05 px за хитбокс.
+ *
+ * Клюв единственный подходит к самому пределу: его дальняя точка лежит в
+ * 13.56 от центра тела, на 3.06 px за хитбоксом. Это осознанный край
+ * правила «плюс 3 px», не случайность.
+ */
+const HEAD_RADIUS = BIRD_RADIUS_VISUAL - Math.hypot(DENSE.headX, DENSE.headY) - DENSE.headClearance;
 
 /**
  * Палитра птицы. Цвет птицы — константа рендера, в `Theme` его нет: птица
@@ -141,7 +176,9 @@ export class BirdRig {
   constructor() {
     this.view.x = BIRD_X;
 
-    const body = new Graphics().ellipse(0, 0, 13, 10).fill(PALETTE.body);
+    const body = new Graphics()
+      .ellipse(0, 0, DENSE.bodyRadiusX, DENSE.bodyRadiusY)
+      .fill(PALETTE.body);
 
     this.#wingFar.position.set(-1, -3);
     this.#wingFar.addChild(new Graphics().ellipse(-8, 0, 10, 3.6).fill(PALETTE.wing));
@@ -152,12 +189,10 @@ export class BirdRig {
       new Graphics().poly([0, -3.5, -13, -7.5, -9.5, 0, -13, 7.5, 0, 3.5], true).fill(PALETTE.tail),
     );
 
-    // Плотные части — тело, голова и клюв — не выходят за хитбокс больше
-    // чем на 3 px: иначе игрок увидит наложение на препятствие без смерти.
-    // Хитбокс 10.5, предел выноса 13.5. Голова: 6.95 + 5.6 = 12.55, клюв 13.2.
-    // Крылья и хвост крупнее свободно — они мягкие.
-    this.#head.position.set(6, -3.5);
-    this.#head.addChild(new Graphics().circle(0, 0, 5.6).fill(PALETTE.head));
+    // Числа плотных частей — в блоке DENSE: они привязаны к
+    // BIRD_RADIUS_VISUAL, то есть к хитбоксу.
+    this.#head.position.set(DENSE.headX, DENSE.headY);
+    this.#head.addChild(new Graphics().circle(0, 0, HEAD_RADIUS).fill(PALETTE.head));
     this.#head.addChild(new Graphics().poly([3.6, -1.2, 7.2, 0.4, 3.6, 2.6], true).fill(PALETTE.beak));
 
     this.#eye.position.set(2, -1.5);

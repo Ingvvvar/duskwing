@@ -8,7 +8,7 @@ import type { RunOutcome } from '../game/progress';
 import { recordAttempt, recordRun, resolveOutcome, setMuted, shouldShowHint } from '../game/progress';
 import { mulberry32 } from '../game/rng';
 import type { Rng } from '../game/rng';
-import { DEBUG_THEME, DUSK, endlessTheme, THEMES } from '../game/themes';
+import { DEBUG_THEME, endlessTheme, findTheme, THEMES } from '../game/themes';
 import type { GamePhase, LevelConfig, Theme } from '../game/types';
 import { PixiRenderer } from '../render/pixi/PixiRenderer';
 import { Sound } from '../audio/sound';
@@ -63,7 +63,7 @@ function readThemeOverride(): Theme | null {
     return null;
   }
 
-  return id === 'debug' ? DEBUG_THEME : (THEMES[id] ?? null);
+  return id === 'debug' ? DEBUG_THEME : findTheme(id);
 }
 
 /**
@@ -71,11 +71,9 @@ function readThemeOverride(): Theme | null {
  * перетекают от `dusk` к `void` по счёту.
  */
 function themeFor(level: LevelConfig, score: number): Theme {
-  if (level.id === ENDLESS.id) {
-    return endlessTheme(score);
-  }
-
-  return THEMES[level.themeId] ?? DUSK;
+  // Ветка по данным, а не по id уровня: тему «нет как данных» объявляет сам
+  // конфиг, и появись второй такой режим, здесь править нечего.
+  return level.themeId === null ? endlessTheme(score) : THEMES[level.themeId];
 }
 
 /**

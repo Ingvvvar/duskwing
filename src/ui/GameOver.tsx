@@ -17,7 +17,7 @@ interface GameOverProps {
  */
 export function GameOver({ score, best, onRestart }: GameOverProps): ReactElement {
   return (
-    <div className="overlay overlay--center overlay--quiet">
+    <div className="overlay overlay--center overlay--quiet overlay--passthrough">
       <h2 className="title title--small">Игра окончена</h2>
       <p className="result">
         {score}

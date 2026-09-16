@@ -144,7 +144,6 @@ def analyse(path):
         'bg_mean': sum(background) / len(background),
         'bg_p95': background[int(len(background) * 0.95)],
         'bg_max': background[-1],
-        'pixels': len(background),
     }
 
 

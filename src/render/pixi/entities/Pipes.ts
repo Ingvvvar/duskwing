@@ -1,7 +1,8 @@
 import { Container, NineSliceSprite, Texture } from 'pixi.js';
 
-import { GROUND_TOP, PIPE_WIDTH } from '../../../game/constants';
+import { PIPE_WIDTH } from '../../../game/constants';
 import type { Pipe, Theme } from '../../../game/types';
+import { obstacleLayout } from '../../obstacleLayout';
 import { createObstacleTexture, type ObstacleTexture } from '../textures';
 
 interface PipeView {
@@ -18,8 +19,15 @@ interface PipeView {
  * половины, три дисплей-объекта.
  *
  * Девятислайсовая нарезка растягивает только середину, поэтому навершие у
- * кромки просвета не деформируется ни при какой высоте трубы, а геометрия
- * по-прежнему строится один раз: покадрово меняется только `container.x`.
+ * кромки просвета не деформируется ни при какой высоте трубы.
+ *
+ * Вертикальная геометрия пересчитывается каждый кадр, а не один раз при
+ * выдаче из пула. Это не перестраховка: у движущихся труб `gapCenter` меняет
+ * `Game` на каждом тике, и раскладка, поставленная в момент появления трубы
+ * за правым краем, к встрече с птицей расходилась с коллизией на 44 px на
+ * уровне 3 и на 48 px на уровне 5 — птица умирала о нарисованную пустоту.
+ * Формула раскладки живёт в `obstacleLayout` и сверена с `pipeRects` тестом
+ * `tests/obstacle-layout.test.ts`.
  *
  * Плотная часть плитки — ровно `PIPE_WIDTH` и ровно цвета `accent`, то есть
  * ровно то, что участвует в коллизии. Всё остальное мягкое.
@@ -65,6 +73,7 @@ export class PipePool {
 
       this.#active.set(pipe.id, view);
       view.container.x = pipe.x + offsetX;
+      this.#place(view, pipe);
     }
 
     for (const [id, view] of this.#active) {
@@ -91,38 +100,42 @@ export class PipePool {
     view.bottom.texture = bottom.texture;
     view.bottom.topHeight = bottom.capBorder;
     view.bottom.bottomHeight = bottom.tailBorder;
+
+    // Спрайт шире коллизии на мягкое поле с каждой стороны, поэтому ставится
+    // левее на `pad`. Прямоугольник коллизии при этом не сдвигается. По
+    // горизонтали геометрия зависит только от плитки, поэтому живёт здесь, а
+    // не в покадровой раскладке.
+    view.top.x = -top.pad;
+    view.top.width = PIPE_WIDTH + top.pad * 2;
+    view.bottom.x = -bottom.pad;
+    view.bottom.width = PIPE_WIDTH + bottom.pad * 2;
+  }
+
+  #place(view: PipeView, pipe: Pipe): void {
+    const top = this.#top;
+    const bottom = this.#bottom;
+
+    if (top === null || bottom === null) {
+      return;
+    }
+
+    const floor = (texture: ObstacleTexture): number => texture.capBorder + texture.tailBorder;
+    const layout = obstacleLayout(pipe.gapCenter, pipe.gapHeight, floor(top), floor(bottom));
+
+    view.top.y = layout.topY;
+    view.top.height = layout.topHeight;
+    view.bottom.y = layout.bottomY;
+    view.bottom.height = layout.bottomHeight;
   }
 
   #acquire(pipe: Pipe): PipeView {
     const view = this.#free.pop() ?? this.#create();
-    const top = this.#top;
-    const bottom = this.#bottom;
 
     view.container.visible = true;
     // Отсутствующая половина не рисуется. Прямоугольник присутствующей при
     // этом тот же самый: коллизия про вид препятствия ничего не знает.
     view.top.visible = pipe.shape !== 'bottom';
     view.bottom.visible = pipe.shape !== 'top';
-
-    if (top === null || bottom === null) {
-      return view;
-    }
-
-    const gapTop = pipe.gapCenter - pipe.gapHeight / 2;
-    const gapBottom = pipe.gapCenter + pipe.gapHeight / 2;
-    const floor = (texture: ObstacleTexture): number => texture.capBorder + texture.tailBorder;
-
-    // Спрайт шире коллизии на мягкое поле с каждой стороны, поэтому ставится
-    // левее на `pad`. Прямоугольник коллизии при этом не сдвигается.
-    view.top.x = -top.pad;
-    view.top.y = 0;
-    view.top.width = PIPE_WIDTH + top.pad * 2;
-    view.top.height = Math.max(floor(top), gapTop);
-
-    view.bottom.x = -bottom.pad;
-    view.bottom.y = gapBottom;
-    view.bottom.width = PIPE_WIDTH + bottom.pad * 2;
-    view.bottom.height = Math.max(floor(bottom), GROUND_TOP - gapBottom);
 
     return view;
   }

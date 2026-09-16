@@ -10,7 +10,7 @@ interface LevelClearProps {
 /** Экран «уровень пройден». Геймплей на нём не идёт — мир заморожен хуком. */
 export function LevelClear({ name, score, best, onContinue }: LevelClearProps): ReactElement {
   return (
-    <div className="overlay overlay--center">
+    <div className="overlay overlay--center overlay--passthrough">
       <h2 className="title title--small">Уровень пройден</h2>
       <p className="subtitle">{name}</p>
       <p className="result">

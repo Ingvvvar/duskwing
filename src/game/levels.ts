@@ -138,7 +138,8 @@ export const ENDLESS: LevelConfig = {
   warmup: [],
   ramp: { speedPerPipe: 0.5, gapPerPipe: 0.45, minGap: 145 },
   mechanics: {},
-  themeId: 'endless',
+  // Темы как данных у режима нет: `endlessTheme` строит её по счёту.
+  themeId: null,
 };
 
 /** Всё, во что можно играть: пять уровней плюс бесконечный режим. */

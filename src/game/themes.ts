@@ -1,4 +1,4 @@
-import type { Theme } from './types';
+import type { Theme, ThemeId } from './types';
 
 /**
  * Сумерки — тема уровня 1 и самая спокойная из пяти: погоды нет, переднего
@@ -77,7 +77,7 @@ export const CANYON: Theme = {
   obstacle: { kind: 'spire', capHeight: 20, capOverhang: 12, decor: 'grooves', edgeSoftness: 9 },
 };
 
-/** Пустота: почти монохром, ленты сияния, тяжёлая виньетка. */
+/** Пустота: почти монохром, холодная дымка поверх него, тяжёлая виньетка. */
 export const VOID: Theme = {
   id: 'void',
   sky: ['#05060E', '#090B18', '#0E1024', '#1A1233'],
@@ -93,13 +93,19 @@ export const VOID: Theme = {
   obstacle: { kind: 'crystal', capHeight: 18, capOverhang: 10, decor: 'facets', edgeSoftness: 10 },
 };
 
-/** Все темы по id. Дев-переключатель `?theme=<id>` ходит сюда же. */
-export const THEMES: Readonly<Record<string, Theme>> = {
-  [DUSK.id]: DUSK,
-  [NIGHT.id]: NIGHT,
-  [STORM.id]: STORM,
-  [CANYON.id]: CANYON,
-  [VOID.id]: VOID,
+/**
+ * Все темы уровней по id. Тип с конечными ключами: пропущенная или лишняя
+ * тема не компилируется, и `LevelConfig.themeId` не может сослаться в пустоту.
+ */
+export const THEMES: Readonly<Record<ThemeId, Theme>> = {
+  // Ключи записаны литералами, а не через `[DUSK.id]`: вычисляемый ключ —
+  // это `string`, и проверка на полноту союза перестаёт работать. Совпадение
+  // ключа с `Theme.id` держит тест в `tests/themes.test.ts`.
+  dusk: DUSK,
+  night: NIGHT,
+  storm: STORM,
+  canyon: CANYON,
+  void: VOID,
 };
 
 function clamp01(value: number): number {
@@ -237,3 +243,13 @@ export const DEBUG_THEME: Theme = {
   accent: '#00FFB3',
   obstacle: { kind: 'crystal', capHeight: 22, capOverhang: 14, decor: 'facets', edgeSoftness: 12 },
 };
+
+/**
+ * Поиск темы по произвольной строке — для дев-переключателя `?theme=`, куда
+ * попадает что угодно. Обходом значений, а не индексом: `THEMES` типизирован
+ * конечными ключами, и это ровно та защита, которую не хочется обходить
+ * приведением типа.
+ */
+export function findTheme(id: string): Theme | null {
+  return Object.values(THEMES).find((theme) => theme.id === id) ?? null;
+}
