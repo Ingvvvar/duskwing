@@ -62,7 +62,7 @@ function trackInstances(delta: number): void {
  * от этого не зависит.
  */
 export class PixiRenderer implements Renderer {
-  readonly #config: LevelConfig;
+  #config: LevelConfig;
 
   readonly #sky = new SkyLayer();
   readonly #celestial = new CelestialLayer();
@@ -89,6 +89,18 @@ export class PixiRenderer implements Renderer {
   #weatherKind: Theme['weather']['kind'] = 'none';
 
   constructor(config: LevelConfig) {
+    this.#config = config;
+  }
+
+  /**
+   * Конфиг текущего уровня. Из него берутся скорость прокрутки фона и
+   * интерполяция труб, поэтому он обязан меняться при смене уровня, а не
+   * оставаться тем, с которым рендер был создан: иначе земля с параллаксом
+   * 1.0 едет со скоростью первого уровня и отстаёт от труб.
+   *
+   * Не часть контракта `Renderer`: тот работает с состоянием, а не с уровнем.
+   */
+  setLevel(config: LevelConfig): void {
     this.#config = config;
   }
 

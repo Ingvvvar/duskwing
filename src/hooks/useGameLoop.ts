@@ -112,6 +112,7 @@ export function useGameLoop(
   const bufferedRef = useRef(false);
   const tapRef = useRef<() => void>(() => undefined);
   const restartRef = useRef<() => void>(() => undefined);
+  const rendererRef = useRef<PixiRenderer | null>(null);
 
   const { update } = progressApi;
 
@@ -144,6 +145,9 @@ export function useGameLoop(
       }
 
       levelRef.current = config;
+      // Скорость прокрутки фона берётся из конфига уровня — рендер обязан
+      // узнать о смене сразу, а не при следующем монтировании.
+      rendererRef.current?.setLevel(config);
       screenRef.current = 'playing';
       setLevel(config);
       setScreen('playing');
@@ -292,6 +296,9 @@ export function useGameLoop(
       }
 
       renderer = created;
+      rendererRef.current = created;
+      // Уровень мог быть выбран, пока шёл await init.
+      created.setLevel(levelRef.current);
       detachResize = observeSize(canvas, created);
       canvas.addEventListener('pointerdown', onPointerDown);
       window.addEventListener('keydown', onKeyDown);
@@ -374,6 +381,8 @@ export function useGameLoop(
       detachResize?.();
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('keydown', onKeyDown);
+
+      rendererRef.current = null;
 
       chainRef.current = (chainRef.current ?? Promise.resolve()).then(() => {
         renderer?.destroy();
