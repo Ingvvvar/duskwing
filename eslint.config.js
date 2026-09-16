@@ -31,11 +31,19 @@ export default tseslint.config(
     },
   },
 
-  // Конфиги в .js вне tsconfig — типизированные правила к ним неприменимы.
+  // Конфиги в .js и node-скрипты в .mjs лежат вне tsconfig — типизированные
+  // правила к ним неприменимы, но обычные работают.
   {
-    files: ['**/*.js'],
+    files: ['**/*.js', '**/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: { globals: globals.node },
+  },
+
+  // Скрипты замеров: снаружи это node, но внутри `page.evaluate` код исполняет
+  // браузер, поэтому там законны `document` и `window`.
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 
   {

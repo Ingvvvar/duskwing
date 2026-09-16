@@ -60,3 +60,56 @@ export const FALSE_MOTION_BAND = { min: 0.85, max: 1.15 } as const;
  * читаемости, и она требует такого же записанного обоснования.
  */
 export const FALSE_MOTION_EXEMPT: readonly string[] = ['ground', 'wind'];
+
+/**
+ * Смещение плитки полос ветра по `travelledX`.
+ *
+ * Коэффициента здесь нет и быть не может: зоны `airflow` неподвижны в мировых
+ * координатах, а полоса — их телеграф. Любой множитель означает, что полоса
+ * поедет мимо потока, который её породил, и игра начнёт врать игроку о том,
+ * где её снесёт.
+ *
+ * Вынесено из слоя отдельной функцией потому, что сам слой импортирует
+ * `pixi.js`: мутационный прогон показал, что множитель 0.8 в точке применения
+ * проходил мимо всего набора.
+ */
+export function windTileOffset(travelledX: number, period: number): number {
+  if (period <= 0) {
+    return 0;
+  }
+
+  return -(((travelledX % period) + period) % period);
+}
+
+/** Смещения слоёв фона на пройденной дистанции. */
+export interface LayerScroll {
+  readonly celestial: number;
+  readonly ridgeFar: number;
+  readonly ridgeNear: number;
+  readonly haze: number;
+  readonly ground: number;
+  readonly foreground: number;
+}
+
+/**
+ * Применение таблицы `PARALLAX` к пройденной дистанции — одним местом.
+ *
+ * Таблица сама по себе была закреплена тестом, а её применение нет: слой мог
+ * ехать со скоростью мира мимо таблицы, а земля с передним планом — обменяться
+ * коэффициентами, и набор оставался зелёным.
+ */
+export function layerScroll(scrollX: number): LayerScroll {
+  return {
+    celestial: scrollX * PARALLAX.celestial,
+    ridgeFar: scrollX * PARALLAX.ridgeFar,
+    ridgeNear: scrollX * PARALLAX.ridgeNear,
+    haze: scrollX * PARALLAX.haze,
+    ground: scrollX * PARALLAX.ground,
+    foreground: scrollX * PARALLAX.foreground,
+  };
+}
+
+/** Снос частиц погоды за кадр. У «никакой» погоды сноса нет. */
+export function weatherDrift(advance: number, kind: keyof typeof WEATHER_PARALLAX | 'none'): number {
+  return kind === 'none' ? 0 : advance * WEATHER_PARALLAX[kind];
+}

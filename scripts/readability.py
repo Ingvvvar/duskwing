@@ -26,7 +26,18 @@ FOREGROUND_BAND = 72                # полоса переднего плана
 BIRD_X, BIRD_CLEARANCE = 104, 15   # птица — игровой слой, в фон не идёт
 SKIP_TOP_CSS = 60                  # полоса, где лежит div счёта
 THRESHOLD = 0.45                   # контракт: фон не выше 45% яркости трубы
+PIPE_WIDTH = 64                    # ширина прямоугольника коллизии
+# Допуск на сглаживание кромок: плотная полоса на экране может оказаться на
+# пару пикселей шире ядра. Мягкие поля темы куда шире — самое узкое 14 px с
+# каждой стороны, — поэтому их прорыв в плотное этот допуск не спрячет.
+DENSE_SLACK = 6
 EDGE_INSET = 3                     # экранных px отступа от кромок трубы
+# Строка считается строкой трубы, если внутри её полосы ярче, чем снаружи, во
+# столько раз. Сравнение идёт с ТОЙ ЖЕ строкой вне полосы, а не с глобальным
+# пиком: виньетка и грейд давят яркость по вертикали, и порог от пика
+# записывал верх трубы под тяжёлой виньеткой в фон, завышая фон в разы.
+REF_RATIO = 2.5
+REF_GAP, REF_WIDTH = 20, 40        # отступ и ширина опорной полосы, экранных px
 
 
 def decode_png(path):
@@ -120,23 +131,34 @@ def analyse(path):
     band = max(runs, key=len)
     if len(band) < 20:
         return None
+    dense_width = len(band) / scale
     # Отступ от боковых кромок: там пиксели — смесь трубы и фона, и без
     # отступа максимум всегда показывает сглаживание, а не элемент фона.
     band = band[EDGE_INSET:-EDGE_INSET]
 
+    # Опорная полоса той же высоты рядом с трубой: в ней заведомо фон, и
+    # виньетка с грейдом действуют на неё так же, как на полосу трубы.
+    left_ref = [x for x in range(band[0] - REF_GAP - REF_WIDTH, band[0] - REF_GAP)
+                if int(x0) <= x and not bird_lo <= x <= bird_hi]
+    right_ref = [x for x in range(band[-1] + REF_GAP, band[-1] + REF_GAP + REF_WIDTH)
+                 if x < int(x0 + WORLD_W * scale) and not bird_lo <= x <= bird_hi]
+    ref = left_ref if len(left_ref) >= len(right_ref) else right_ref
+    if len(ref) < 10:
+        return None
+
     stats = []
     for y in range(top_y, ground_y):
         vals = sorted(luminance(*px(x, y)) for x in band)
-        stats.append((y, vals[len(vals) // 2], vals))
-    peak = max(median for _, median, _ in stats)
-    pipe_rows = [s for s in stats if s[1] > peak * 0.55]
-    gap_rows = [s for s in stats if s[1] <= peak * 0.55][EDGE_INSET:-EDGE_INSET]
+        outside = sorted(luminance(*px(x, y)) for x in ref)
+        stats.append((y, vals[len(vals) // 2], vals, outside[len(outside) // 2]))
+    pipe_rows = [s for s in stats if s[1] > s[3] * REF_RATIO]
+    gap_rows = [s for s in stats if s[1] <= s[3] * REF_RATIO][EDGE_INSET:-EDGE_INSET]
     if not pipe_rows or not gap_rows:
         return None
 
-    pipe = [v for _, _, vals in pipe_rows for v in vals]
-    background = sorted(v for _, _, vals in gap_rows for v in vals)
-    centres = [y for y, _, _ in gap_rows]
+    pipe = [v for _, _, vals, _ in pipe_rows for v in vals]
+    background = sorted(v for _, _, vals, _ in gap_rows for v in vals)
+    centres = [y for y, _, _, _ in gap_rows]
     return {
         'file': path.split('/')[-1],
         'gap_centre': ((sum(centres) / len(centres)) - y0) / scale,
@@ -144,12 +166,26 @@ def analyse(path):
         'bg_mean': sum(background) / len(background),
         'bg_p95': background[int(len(background) * 0.95)],
         'bg_max': background[-1],
+        'dense_width': dense_width,
     }
 
 
 def main():
     pattern = sys.argv[1] if len(sys.argv) > 1 else '.playwright-mcp/*.png'
-    results = [r for r in (analyse(p) for p in sorted(glob.glob(pattern))) if r]
+    files = sorted(glob.glob(pattern))
+    if not files:
+        print(f'кадров не найдено по шаблону {pattern}')
+        return 1
+
+    pairs = [(f, analyse(f)) for f in files]
+    results = [r for _, r in pairs if r]
+    # Кадр, который не удалось разобрать, — это провал, а не повод его
+    # пропустить. Молчаливый пропуск однажды уже дал зелёный код на теме,
+    # где фон был ярче трубы: труба просто не опозналась, и кадр исчез из
+    # выдачи вместе с нарушением.
+    skipped = [f.split('/')[-1] for f, r in pairs if not r]
+    if skipped:
+        print('НЕ РАЗОБРАНЫ (труба не опознана — это тоже провал): ' + ', '.join(skipped))
     if not results:
         print('подходящих кадров не найдено: нужен кадр, где труба на экране')
         return 1
@@ -157,14 +193,22 @@ def main():
     for r in results:
         p95 = r['bg_p95'] / r['pipe'] * 100
         top = r['bg_max'] / r['pipe'] * 100
-        verdict = 'ok' if p95 <= THRESHOLD * 100 else 'ПОРОГ ПРЕВЫШЕН'
-        failed = failed or p95 > THRESHOLD * 100
+        wide = r['dense_width'] > PIPE_WIDTH + DENSE_SLACK
+        verdict = []
+        if p95 > THRESHOLD * 100:
+            verdict.append('ПОРОГ ЯРКОСТИ ПРЕВЫШЕН')
+        if wide:
+            verdict.append('ПЛОТНОЕ ШИРЕ КОЛЛИЗИИ')
+        failed = failed or p95 > THRESHOLD * 100 or wide
         print(f"{r['file']:<16} просвет~{r['gap_centre']:6.1f}  труба={r['pipe']:.4f}  "
               f"фон ср={r['bg_mean']:.4f} p95={r['bg_p95']:.4f} max={r['bg_max']:.4f}  "
-              f"p95/труба={p95:5.1f}%  max/труба={top:5.1f}%  {verdict}")
+              f"p95/труба={p95:5.1f}%  плотное={r['dense_width']:5.1f}px  "
+              f"{'; '.join(verdict) if verdict else 'ok'}")
     print(f"\nпорог {THRESHOLD * 100:.0f}% считается от измеренной яркости трубы "
           f"(после грейда и виньетки). Решение — по p95, максимум справочно.")
-    return 1 if failed else 0
+    print(f"плотная полоса не шире {PIPE_WIDTH} px плюс {DENSE_SLACK} px на сглаживание: "
+          f"плотным может быть только то, что участвует в коллизии.")
+    return 1 if failed or skipped else 0
 
 
 if __name__ == '__main__':

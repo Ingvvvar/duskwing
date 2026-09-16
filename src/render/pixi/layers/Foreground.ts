@@ -1,6 +1,7 @@
 import { TilingSprite, Texture } from 'pixi.js';
 
-import { FOREGROUND_BAND_HEIGHT, GROUND_TOP, WORLD_WIDTH } from '../../../game/constants';
+import { WORLD_WIDTH } from '../../../game/constants';
+import { foregroundBand } from '../../foregroundBand';
 import type { Theme } from '../../../game/types';
 import { createForegroundTexture, dimToLuminance, relativeLuminance } from '../textures';
 
@@ -18,8 +19,7 @@ export class ForegroundLayer {
     label: 'foreground',
     texture: Texture.EMPTY,
     width: WORLD_WIDTH,
-    height: FOREGROUND_BAND_HEIGHT,
-    y: GROUND_TOP - FOREGROUND_BAND_HEIGHT,
+    ...foregroundBand(),
   });
 
   #texture: Texture | null = null;

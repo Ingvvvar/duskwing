@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FLYABLE_CENTER, FOREGROUND_BAND_HEIGHT, GROUND_TOP } from '../src/game/constants';
 import { PLAYABLE } from '../src/game/levels';
+import { foregroundBand } from '../src/render/foregroundBand';
 
 /**
  * Передний план живёт в нижних `FOREGROUND_BAND_HEIGHT` px над линией земли.
@@ -35,5 +36,26 @@ describe('полоса переднего плана', () => {
 
   it('проверка идёт по всем уровням и по бесконечному режиму', () => {
     expect(PLAYABLE).toHaveLength(6);
+  });
+});
+
+/**
+ * Вторая сторона того же контракта: сам слой обязан жить в полосе.
+ *
+ * Тест выше закрепляет данные — что просвет не опускается в полосу. Слой при
+ * этом можно было нарисовать вдвое выше, и набор оставался зелёным: точка
+ * применения не была закреплена ничем. Числа записаны литералами.
+ */
+describe('слой переднего плана', () => {
+  it('стоит в нижних 72 px и упирается в линию земли', () => {
+    const band = foregroundBand();
+
+    expect(band.height).toBe(72);
+    expect(band.y).toBe(476);
+    expect(band.y + band.height).toBe(548);
+  });
+
+  it('не поднимается в лётную зону', () => {
+    expect(foregroundBand().y).toBeGreaterThan(FLYABLE_CENTER);
   });
 });

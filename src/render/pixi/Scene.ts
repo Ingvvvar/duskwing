@@ -2,7 +2,7 @@ import { Container, Sprite, Texture, type Renderer } from 'pixi.js';
 
 import { GROUND_TOP, MAX_FRAME_MS, WORLD_WIDTH } from '../../game/constants';
 import type { GameState, LevelConfig, Theme } from '../../game/types';
-import { PARALLAX, WEATHER_PARALLAX } from '../parallax';
+import { layerScroll, weatherDrift } from '../parallax';
 import { createEdgeHazeTexture } from './textures';
 import { CelestialLayer } from './layers/Celestial';
 import { ForegroundLayer } from './layers/Foreground';
@@ -112,20 +112,25 @@ export class Scene {
   }
 
   update(state: GameState, dtMs: number, scrollX: number, advance: number): void {
-    // Слой 0 с параллаксом 0 не прокручивается вовсе.
-    this.#celestial.scroll(scrollX * PARALLAX.celestial);
-    this.#ridgeFar.scroll(scrollX * PARALLAX.ridgeFar);
-    this.#ridgeNear.scroll(scrollX * PARALLAX.ridgeNear);
-    this.#haze.scroll(scrollX * PARALLAX.haze);
-    this.#ground.scroll(scrollX * PARALLAX.ground);
-    this.#foreground.scroll(scrollX * PARALLAX.foreground);
+    // Слой 0 с параллаксом 0 не прокручивается вовсе. Коэффициенты берутся
+    // одним местом: врозь они разъезжались бы с таблицей незаметно.
+    const offset = layerScroll(scrollX);
+
+    this.#celestial.scroll(offset.celestial);
+    this.#ridgeFar.scroll(offset.ridgeFar);
+    this.#ridgeNear.scroll(offset.ridgeNear);
+    this.#haze.scroll(offset.haze);
+    this.#ground.scroll(offset.ground);
+    this.#foreground.scroll(offset.foreground);
     this.#wind.update(state);
     this.#lightning.update(state, dtMs);
 
-    const weatherParallax = this.#weatherKind === 'none' ? 0 : WEATHER_PARALLAX[this.#weatherKind];
     const stepMs = Number.isFinite(dtMs) && dtMs > 0 ? Math.min(dtMs, MAX_FRAME_MS) : 0;
 
-    this.#weather.update((stepMs * (advance === 0 ? 0 : 1)) / 1000, advance * weatherParallax);
+    this.#weather.update(
+      (stepMs * (advance === 0 ? 0 : 1)) / 1000,
+      weatherDrift(advance, this.#weatherKind),
+    );
   }
 
   setAlpha(alpha: number): void {

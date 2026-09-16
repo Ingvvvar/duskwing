@@ -2,6 +2,7 @@ import { TilingSprite, Texture } from 'pixi.js';
 
 import { GROUND_TOP, WORLD_WIDTH } from '../../../game/constants';
 import { airflowPeriod } from '../../../game/mechanics';
+import { windTileOffset } from '../../parallax';
 import type { GameState, LevelConfig, Theme } from '../../../game/types';
 import { createWindTexture } from '../textures';
 
@@ -58,8 +59,8 @@ export class WindLayer {
     }
 
     // Ровно travelledX, без коэффициентов: полоса обязана стоять там же, где
-    // поток, который её породил.
-    this.view.tilePosition.x = -(((state.travelledX % this.#period) + this.#period) % this.#period);
+    // поток, который её породил. Формула — в `windTileOffset`, под тестом.
+    this.view.tilePosition.x = windTileOffset(state.travelledX, this.#period);
   }
 
   destroy(): void {
