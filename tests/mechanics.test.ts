@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { BIRD_X, GROUND_TOP, MAX_FALL_SPEED, STEP_MS, STEP_SECONDS } from '../src/game/constants';
+import {
+  BIRD_RADIUS_HITBOX,
+  BIRD_X,
+  GROUND_TOP,
+  MAX_FALL_SPEED,
+  STEP_MS,
+  STEP_SECONDS,
+} from '../src/game/constants';
 import { LEVEL_1, LEVEL_3, LEVEL_4, PLAYABLE } from '../src/game/levels';
 import { airflowAt, pipeGapCenterAt } from '../src/game/mechanics';
 import { mulberry32 } from '../src/game/rng';
@@ -197,5 +204,100 @@ describe('удержание колеблющейся трубы в лётной
     }
 
     expect(seen).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Точка вызова `airflowAt` в логике: поток берётся в МИРОВОЙ координате птицы,
+ * то есть `travelledX + BIRD_X`, а не в её экранном иксе.
+ *
+ * Комментарий у `airflowAt` называет такой разъезд почти ненаходимым — и он
+ * прав: мутационный прогон показал, что подмена мировой координаты на экранную
+ * оставляла весь набор зелёным. Сама функция была покрыта, её вызов — нет.
+ *
+ * Наблюдение ведётся через ускорение птицы при НУЛЕВОЙ гравитации: тогда
+ * единственное, что её разгоняет, — поток. Ожидание считается от ширины зоны,
+ * записанной литералом (360 / 3 зоны = 120), а не тем же выражением, что в коде.
+ */
+describe('точка вызова потока в логике', () => {
+  const ZONE_WIDTH = 120;
+  const weightless: LevelConfig = {
+    ...LEVEL_1,
+    gravity: 0,
+    // Импульс тоже нулевой: иначе стартовый взмах уносит птицу в потолок, а
+    // упор гасит скорость и даёт ложный скачок ускорения.
+    flapVelocity: 0,
+    // Труб в кадре быть не должно: они бы убили птицу и оборвали наблюдение.
+    runwayMs: 1_000_000,
+    mechanics: { airflow: { zones: 3, strength: 220 } },
+  };
+
+  it('ширина зоны в этом конфиге действительно 120 px', () => {
+    expect(360 / (weightless.mechanics.airflow?.zones ?? 0)).toBe(ZONE_WIDTH);
+  });
+
+  /** Ускорение по кадрам плюс мировая координата птицы в тот же момент. */
+  function accelerations(): { worldX: number; a: number }[] {
+    const history = run(started(weightless, mulberry32(4)), { frames: 480 });
+    const out: { worldX: number; a: number }[] = [];
+
+    for (let index = 1; index < history.length; index += 1) {
+      const before = history[index - 1];
+      const after = history[index];
+
+      if (before === undefined || after === undefined) {
+        continue;
+      }
+
+      out.push({
+        worldX: before.travelledX + BIRD_X,
+        a: (after.birdVelocity - before.birdVelocity) / STEP_SECONDS,
+      });
+    }
+
+    return out;
+  }
+
+  it('наблюдение чистое: птица не касается ни потолка, ни земли', () => {
+    const history = run(started(weightless, mulberry32(4)), { frames: 480 });
+
+    expect(history.every((state) => state.phase === 'play')).toBe(true);
+    expect(Math.min(...history.map((state) => state.birdY))).toBeGreaterThan(BIRD_RADIUS_HITBOX + 1);
+    expect(Math.max(...history.map((state) => state.birdY))).toBeLessThan(GROUND_TOP - 1);
+  });
+
+  it('поток меняет знак по ходу полёта, а не стоит на месте', () => {
+    const samples = accelerations();
+
+    expect(Math.min(...samples.map((sample) => sample.a))).toBeLessThan(-100);
+    expect(Math.max(...samples.map((sample) => sample.a))).toBeGreaterThan(100);
+  });
+
+  it('знак меняется на границах зон, отсчитанных от мировой координаты', () => {
+    const samples = accelerations();
+    const flips: number[] = [];
+
+    for (let index = 1; index < samples.length; index += 1) {
+      const before = samples[index - 1];
+      const after = samples[index];
+
+      if (before === undefined || after === undefined) {
+        continue;
+      }
+
+      if (Math.sign(before.a) !== Math.sign(after.a)) {
+        flips.push(after.worldX);
+      }
+    }
+
+    expect(flips.length).toBeGreaterThanOrEqual(3);
+
+    for (const worldX of flips) {
+      const offset = ((worldX % ZONE_WIDTH) + ZONE_WIDTH) % ZONE_WIDTH;
+
+      // Смена знака попадает на тик, а не точно на границу: допуск — путь
+      // мира за пару кадров.
+      expect(Math.min(offset, ZONE_WIDTH - offset)).toBeLessThan(4);
+    }
   });
 });

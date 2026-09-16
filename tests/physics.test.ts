@@ -4,12 +4,19 @@ import {
   BIRD_RADIUS_HITBOX,
   BIRD_X,
   FLYABLE_CENTER,
+  GROUND_TOP,
   MAX_FALL_SPEED,
   PIPE_WIDTH,
   STEP_SECONDS,
 } from '../src/game/constants';
 import { LEVEL_1 } from '../src/game/levels';
-import { circleHitsRect, integrateVertical, pipeRects, resolveCeiling } from '../src/game/physics';
+import {
+  circleHitsRect,
+  hitsGround,
+  integrateVertical,
+  pipeRects,
+  resolveCeiling,
+} from '../src/game/physics';
 import { mulberry32 } from '../src/game/rng';
 import { run, started } from './support/simulate';
 
@@ -92,5 +99,66 @@ describe('коллизия с трубой', () => {
     expect(circleHitsRect(BIRD_X, gapBottom - BIRD_RADIUS_HITBOX, BIRD_RADIUS_HITBOX, bottom)).toBe(
       false,
     );
+  });
+
+  /**
+   * Проверка стоит НЕ на границе касания намеренно.
+   *
+   * На самой касательной `d² < r²` и ошибочное `d² < r` дают один и тот же
+   * ответ, поэтому граничный тест такую подмену пропускает — мутационный
+   * прогон это и показал. Расходятся они между √r и r: при радиусе 10.5 это
+   * полоса от 3.24 до 10.5. Глубина 6 px лежит ровно внутри неё.
+   */
+  it('заметно внутри касания убивает: радиус сравнивается со своим квадратом', () => {
+    const depth = 6;
+
+    expect(depth).toBeGreaterThan(Math.sqrt(BIRD_RADIUS_HITBOX));
+    expect(depth).toBeLessThan(BIRD_RADIUS_HITBOX);
+
+    expect(circleHitsRect(BIRD_X, gapTop + depth, BIRD_RADIUS_HITBOX, top)).toBe(true);
+    expect(circleHitsRect(BIRD_X, gapBottom - depth, BIRD_RADIUS_HITBOX, bottom)).toBe(true);
+
+    // И симметрично: чуть дальше радиуса по-прежнему не убивает.
+    expect(circleHitsRect(BIRD_X, gapTop + BIRD_RADIUS_HITBOX + 0.5, BIRD_RADIUS_HITBOX, top)).toBe(
+      false,
+    );
+  });
+
+  /**
+   * Коробки трубы описываются независимо от `pipeRects`: ожидание считается
+   * из центра просвета и его высоты вручную, иначе тест повторил бы ту же
+   * формулу и закрепил бы ноль.
+   */
+  it('коробки трубы: от потолка до просвета и от просвета ровно до земли', () => {
+    const [t, b] = pipeRects(0, gapCenter, LEVEL_1.pipeGap);
+
+    expect(t.y).toBe(0);
+    expect(t.height).toBeCloseTo(gapTop, 10);
+    expect(b.y).toBeCloseTo(gapBottom, 10);
+    // Нижняя коробка доходит до земли: под трубой нет щели, в которую можно
+    // проскочить.
+    expect(b.y + b.height).toBeCloseTo(GROUND_TOP, 10);
+    // Ширина обеих — ровно ширина коллизии, литералом.
+    expect(t.width).toBe(64);
+    expect(b.width).toBe(64);
+  });
+});
+
+describe('земля', () => {
+  it('убивает ровно тогда, когда низ птицы дошёл до линии земли', () => {
+    // Радиус участвует: считается низ птицы, а не её центр.
+    expect(hitsGround(GROUND_TOP - BIRD_RADIUS_HITBOX, BIRD_RADIUS_HITBOX)).toBe(true);
+    expect(hitsGround(GROUND_TOP - BIRD_RADIUS_HITBOX - 0.5, BIRD_RADIUS_HITBOX)).toBe(false);
+    // Центр на линии земли — птица давно мертва.
+    expect(hitsGround(GROUND_TOP, BIRD_RADIUS_HITBOX)).toBe(true);
+  });
+
+  it('без радиуса птица провалилась бы в землю на свой радиус', () => {
+    // Закрепляет именно то, что радиус не забыт: на этой высоте центр ещё
+    // выше земли, а низ птицы уже под ней.
+    const y = GROUND_TOP - BIRD_RADIUS_HITBOX / 2;
+
+    expect(y).toBeLessThan(GROUND_TOP);
+    expect(hitsGround(y, BIRD_RADIUS_HITBOX)).toBe(true);
   });
 });

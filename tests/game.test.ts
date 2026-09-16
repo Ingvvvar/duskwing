@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { FLYABLE_CENTER, GROUND_TOP, MAX_FRAME_MS, STEP_MS } from '../src/game/constants';
+import {
+  BIRD_RADIUS_HITBOX,
+  FLYABLE_CENTER,
+  GROUND_TOP,
+  MAX_FRAME_MS,
+  STEP_MS,
+} from '../src/game/constants';
 import { Game } from '../src/game/Game';
 import { LEVEL_1 } from '../src/game/levels';
 import { resolveOutcome } from '../src/game/progress';
@@ -211,5 +217,145 @@ describe('цель и смерть одновременно', () => {
     expect(game.state.phase).toBe('over');
     expect(game.state.score).toBeGreaterThanOrEqual(easy.target);
     expect(resolveOutcome(game.state.score, easy.target, game.state.phase)).toBe('cleared');
+  });
+});
+
+/**
+ * Столкновение с трубой на уровне `Game`, а не только в `physics`.
+ *
+ * Мутационный прогон показал: проверка НИЖНЕЙ половины в `#hitsAnyPipe`
+ * отключалась целиком, и весь набор оставался зелёным — при том, что удар
+ * о нижнюю половину это самая частая смерть в игре. Верхнюю половину ловил
+ * только `warmup.test.ts`, и то попутно.
+ *
+ * `gapDrift: 0` делает раскладку неслучайной: каждый просвет ровно в центре
+ * лётной зоны, поэтому и цель автопилота, и смерть детерминированы.
+ */
+describe('столкновение с половинами трубы', () => {
+  const straight: LevelConfig = { ...LEVEL_1, gapDrift: 0, warmup: [], runwayMs: 0 };
+  const gapTop = FLYABLE_CENTER - straight.pipeGap / 2;
+  const gapBottom = FLYABLE_CENTER + straight.pipeGap / 2;
+
+  /**
+   * Птица держится у заданной высоты: махает, как только опустилась ниже.
+   * Импульс −430 при гравитации 1450 даёт подъём 64 px, то есть колебание
+   * укладывается в полосу [target − 64, target].
+   */
+  const hoverAt = (target: number) => (state: { birdY: number }) => state.birdY > target;
+
+  it('нижняя половина убивает', () => {
+    // Полоса колебания целиком внутри нижней коробки и заведомо выше земли:
+    // умереть можно только о трубу.
+    const target = gapBottom + 80;
+
+    expect(target - 64 - BIRD_RADIUS_HITBOX).toBeGreaterThan(gapBottom);
+    expect(target + BIRD_RADIUS_HITBOX).toBeLessThan(GROUND_TOP);
+
+    const game = started(straight, mulberry32(3));
+
+    run(game, { frames: 1200, control: hoverAt(target) });
+
+    expect(game.state.phase).toBe('over');
+    // Именно о трубу, а не о землю: до земли ещё далеко.
+    expect(game.state.birdY).toBeLessThan(GROUND_TOP - BIRD_RADIUS_HITBOX);
+  });
+
+  it('верхняя половина убивает', () => {
+    // Симметрично: полоса целиком внутри верхней коробки и ниже упора в потолок.
+    const target = gapTop - 80;
+
+    expect(target + BIRD_RADIUS_HITBOX).toBeLessThan(gapTop);
+    expect(target - 64 - BIRD_RADIUS_HITBOX).toBeGreaterThan(0);
+
+    const game = started(straight, mulberry32(3));
+
+    run(game, { frames: 1200, control: hoverAt(target) });
+
+    expect(game.state.phase).toBe('over');
+    expect(game.state.birdY).toBeLessThan(gapTop);
+  });
+
+  it('по центру просвета труба не убивает: полоса пролетается насквозь', () => {
+    const game = started(straight, mulberry32(3));
+
+    run(game, { frames: 1200, control: autopilot });
+
+    expect(game.state.phase).toBe('play');
+    expect(game.state.score).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Ход движущейся трубы считается на каждом тике, а не один раз при рождении.
+ *
+ * Мутационный прогон показал: `gapCenter: pipe.gapCenter` вместо пересчёта
+ * оставлял набор зелёным. Это логическая половина того же бага, который на
+ * стороне рендера давал 45 px между нарисованным просветом и коллизией:
+ * `pipeGapCenterAt` как чистая функция была покрыта, а то, что её кто-то
+ * зовёт каждый тик, — нет.
+ *
+ * Ожидание считается НЕ через `pipeGapCenterAt`: тест смотрел бы сам на себя.
+ * Проверяются наблюдаемые свойства траектории — размах, период и коридор.
+ */
+describe('ход движущейся трубы', () => {
+  const AMPLITUDE = 26;
+  const PERIOD_MS = 2600;
+  const moving: LevelConfig = {
+    ...LEVEL_1,
+    gapDrift: 0,
+    warmup: [],
+    runwayMs: 0,
+    mechanics: { movingPipes: { amplitude: AMPLITUDE, periodMs: PERIOD_MS } },
+  };
+
+  /** Траектория первой трубы: пары «время, центр просвета». */
+  function track(): { at: number; gapCenter: number; base: number }[] {
+    const history = run(started(moving, mulberry32(11)), { frames: 400, control: autopilot });
+    const samples: { at: number; gapCenter: number; base: number }[] = [];
+
+    for (const state of history) {
+      const first = state.pipes.find((pipe) => pipe.id === 0);
+
+      if (first !== undefined) {
+        samples.push({ at: state.elapsedMs, gapCenter: first.gapCenter, base: first.baseGapCenter });
+      }
+    }
+
+    return samples;
+  }
+
+  it('центр просвета едет, а его база стоит', () => {
+    const samples = track();
+
+    expect(samples.length).toBeGreaterThan(200);
+
+    const bases = new Set(samples.map((sample) => sample.base));
+    const centres = new Set(samples.map((sample) => sample.gapCenter));
+
+    expect(bases.size).toBe(1);
+    expect(centres.size).toBeGreaterThan(100);
+  });
+
+  it('размах хода равен удвоенной амплитуде и не выходит за коридор', () => {
+    const samples = track();
+    const base = samples[0]?.base ?? 0;
+    const values = samples.map((sample) => sample.gapCenter);
+    const lowest = Math.min(...values);
+    const highest = Math.max(...values);
+
+    // Размах считается по наблюдению, а не по формуле хода.
+    expect(highest - lowest).toBeGreaterThan(2 * AMPLITUDE - 1);
+    expect(highest - lowest).toBeLessThanOrEqual(2 * AMPLITUDE + EPSILON);
+    expect(lowest).toBeGreaterThanOrEqual(base - AMPLITUDE - EPSILON);
+    expect(highest).toBeLessThanOrEqual(base + AMPLITUDE + EPSILON);
+  });
+
+  it('между крайними точками проходит половина периода', () => {
+    const samples = track();
+    const top = samples.reduce((a, b) => (b.gapCenter < a.gapCenter ? b : a));
+    const low = samples.reduce((a, b) => (b.gapCenter > a.gapCenter ? b : a));
+
+    // Допуск — пара кадров: крайняя точка попадает на тик, а не точно на пик.
+    expect(Math.abs(Math.abs(top.at - low.at) - PERIOD_MS / 2)).toBeLessThan(4 * STEP_MS);
   });
 });
