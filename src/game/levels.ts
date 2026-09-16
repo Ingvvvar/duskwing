@@ -22,8 +22,84 @@ export const LEVEL_1: LevelConfig = {
   themeId: 'dusk',
 };
 
-/** Уровни 2–5 приезжают в фазе 5, каждый одним объектом и без правок кода. */
-export const LEVELS: readonly LevelConfig[] = [LEVEL_1];
+/** Ночь: быстрее и уже, без новых механик. */
+export const LEVEL_2: LevelConfig = {
+  id: 2,
+  name: 'Ночь',
+  target: 15,
+  gravity: 1450,
+  flapVelocity: -430,
+  pipeSpeed: 135,
+  pipeGap: 190,
+  pipeSpacing: 250,
+  gapDrift: 58,
+  runwayMs: 2200,
+  ramp: null,
+  mechanics: {},
+  themeId: 'night',
+};
+
+/**
+ * Гроза: трубы ходят по вертикали.
+ *
+ * `ramp` намеренно нет: новая механика и нарастающая сложность вместе дают
+ * два источника роста в одном уровне, и при разборе «тут нечестно» причину
+ * не отделить. Механики самой по себе достаточно.
+ */
+export const LEVEL_3: LevelConfig = {
+  id: 3,
+  name: 'Гроза',
+  target: 20,
+  gravity: 1450,
+  flapVelocity: -430,
+  pipeSpeed: 145,
+  pipeGap: 180,
+  pipeSpacing: 245,
+  gapDrift: 55,
+  runwayMs: 2000,
+  ramp: null,
+  mechanics: { movingPipes: { amplitude: 26, periodMs: 2600 } },
+  themeId: 'storm',
+};
+
+/** Каньон: зоны восходящих и нисходящих потоков. */
+export const LEVEL_4: LevelConfig = {
+  id: 4,
+  name: 'Каньон',
+  target: 25,
+  gravity: 1450,
+  flapVelocity: -430,
+  pipeSpeed: 150,
+  pipeGap: 180,
+  pipeSpacing: 250,
+  gapDrift: 48,
+  runwayMs: 2000,
+  ramp: { speedPerPipe: 0.6, gapPerPipe: 0.5, minGap: 160 },
+  mechanics: { airflow: { zones: 3, strength: 220 } },
+  themeId: 'canyon',
+};
+
+/** Пустота: всё сразу и минимальный просвет. */
+export const LEVEL_5: LevelConfig = {
+  id: 5,
+  name: 'Пустота',
+  target: 30,
+  gravity: 1450,
+  flapVelocity: -430,
+  pipeSpeed: 165,
+  pipeGap: 160,
+  pipeSpacing: 240,
+  gapDrift: 42,
+  runwayMs: 2000,
+  ramp: { speedPerPipe: 0.8, gapPerPipe: 0.7, minGap: 140 },
+  mechanics: {
+    movingPipes: { amplitude: 30, periodMs: 2200 },
+    airflow: { zones: 4, strength: 340 },
+  },
+  themeId: 'void',
+};
+
+export const LEVELS: readonly LevelConfig[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5];
 
 /**
  * Реестр всех пяти уровней из раздела 3 TASK.md — только id и имя.

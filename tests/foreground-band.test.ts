@@ -14,10 +14,13 @@ import { LEVELS } from '../src/game/levels';
  * удержанием внутри самой зоны.
  */
 function lowestGapBottom(level: (typeof LEVELS)[number]): number {
-  const half = level.pipeGap / 2;
-  const lowestCentre = Math.min(FLYABLE_CENTER + level.gapDrift, GROUND_TOP - half);
+  // Амплитуда хода трубы входит в запас: удержание в лётной зоне считает её
+  // так же, поэтому нижняя кромка просвета опускается на amplitude ниже
+  // своей базы в крайней точке колебания.
+  const margin = level.pipeGap / 2 + (level.mechanics.movingPipes?.amplitude ?? 0);
+  const lowestCentre = Math.min(FLYABLE_CENTER + level.gapDrift, GROUND_TOP - margin);
 
-  return lowestCentre + half;
+  return lowestCentre + margin;
 }
 
 describe('полоса переднего плана', () => {
@@ -30,7 +33,7 @@ describe('полоса переднего плана', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('уровни есть — иначе проверка зеленеет, ничего не проверив', () => {
-    expect(LEVELS.length).toBeGreaterThan(0);
+  it('проверка идёт по всем пяти уровням, а не по одному', () => {
+    expect(LEVELS).toHaveLength(5);
   });
 });

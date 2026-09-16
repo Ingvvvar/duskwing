@@ -10,6 +10,7 @@ import {
   STEP_SECONDS,
   WORLD_WIDTH,
 } from './constants';
+import { airflowAt, pipeGapCenterAt } from './mechanics';
 import { circleHitsRect, hitsGround, integrateVertical, pipeRects, resolveCeiling } from './physics';
 import type { Rng } from './rng';
 import type { GamePhase, GameState, LevelConfig, Pipe } from './types';
@@ -38,6 +39,10 @@ export class Game {
   #pipes: readonly Pipe[] = [];
   #nextPipeId = 0;
   #lastGapCenter = FLYABLE_CENTER;
+  /** Пройденное миром расстояние: мировая система координат для airflow. */
+  #travelledX = 0;
+  /** Сколько труб уже родилось. Шаг разгона `ramp` считается по ним. */
+  #spawned = 0;
 
   constructor(config: LevelConfig, rng: Rng) {
     this.#config = config;
@@ -54,6 +59,7 @@ export class Game {
       alpha: this.#accumulatorMs / STEP_MS,
       score: this.#score,
       elapsedMs: this.#elapsedMs,
+      travelledX: this.#travelledX,
       pipes: this.#pipes,
     };
   }
@@ -97,10 +103,15 @@ export class Game {
     this.#prevBirdY = this.#birdY;
     this.#elapsedMs += STEP_MS;
 
+    // Поток считается для мировой позиции птицы той же функцией, которой в
+    // подходе Б рендер будет рисовать полосы ветра.
+    const { airflow } = this.#config.mechanics;
+    const drift = airflow === undefined ? 0 : airflowAt(this.#travelledX + BIRD_X, airflow);
+
     const moved = resolveCeiling(
       integrateVertical(
         { y: this.#birdY, velocity: this.#birdVelocity },
-        this.#config.gravity,
+        this.#config.gravity + drift,
         STEP_SECONDS,
       ),
       BIRD_RADIUS_HITBOX,
@@ -127,9 +138,12 @@ export class Game {
    * мутацию на месте: иначе сломается и детерминизм тестов, и интерполяция.
    */
   #advancePipes(): void {
-    const { pipeSpeed, pipeSpacing, runwayMs } = this.#config;
-    const shift = pipeSpeed * STEP_SECONDS;
+    const { pipeSpacing, runwayMs } = this.#config;
+    const { movingPipes } = this.#config.mechanics;
+    const shift = this.#speed() * STEP_SECONDS;
     const moved: Pipe[] = [];
+
+    this.#travelledX += shift;
 
     for (const pipe of this.#pipes) {
       const x = pipe.x - shift;
@@ -144,7 +158,12 @@ export class Game {
         this.#score += 1;
       }
 
-      moved.push({ ...pipe, x, scored });
+      moved.push({
+        ...pipe,
+        x,
+        scored,
+        gapCenter: pipeGapCenterAt(pipe.baseGapCenter, pipe.phase, this.#elapsedMs, movingPipes),
+      });
     }
 
     const last = moved[moved.length - 1];
@@ -158,23 +177,51 @@ export class Game {
     this.#pipes = moved;
   }
 
+  /** Скорость с учётом разгона: общая для всех труб на экране. */
+  #speed(): number {
+    const { ramp, pipeSpeed } = this.#config;
+
+    return ramp === null ? pipeSpeed : pipeSpeed + ramp.speedPerPipe * this.#spawned;
+  }
+
+  /** Просвет с учётом разгона. Фиксируется у трубы в момент рождения. */
+  #gap(): number {
+    const { ramp, pipeGap } = this.#config;
+
+    return ramp === null ? pipeGap : Math.max(ramp.minGap, pipeGap - ramp.gapPerPipe * this.#spawned);
+  }
+
   #spawnPipe(): Pipe {
-    const { pipeGap, gapDrift } = this.#config;
-    const half = pipeGap / 2;
+    const { gapDrift } = this.#config;
+    const { movingPipes } = this.#config.mechanics;
+    const gapHeight = this.#gap();
+    // Удержание учитывает амплитуду хода: колеблющаяся труба не должна
+    // вылезти ни за потолок, ни за землю в крайних точках колебания.
+    const margin = gapHeight / 2 + (movingPipes?.amplitude ?? 0);
 
     // Три ограничения разом, без ветвлений:
     //   полоса ±gapDrift вокруг центра лётной зоны (LevelConfig),
     //   расхождение с соседом не больше gapDrift (TASK.md, раздел 3),
-    //   просвет целиком внутри лётной зоны.
-    const lower = Math.max(FLYABLE_CENTER - gapDrift, this.#lastGapCenter - gapDrift, half);
-    const upper = Math.min(FLYABLE_CENTER + gapDrift, this.#lastGapCenter + gapDrift, GROUND_TOP - half);
-    const gapCenter = lower + this.#rng() * Math.max(0, upper - lower);
+    //   просвет целиком внутри лётной зоны с запасом на колебание.
+    const lower = Math.max(FLYABLE_CENTER - gapDrift, this.#lastGapCenter - gapDrift, margin);
+    const upper = Math.min(FLYABLE_CENTER + gapDrift, this.#lastGapCenter + gapDrift, GROUND_TOP - margin);
+    const baseGapCenter = lower + this.#rng() * Math.max(0, upper - lower);
+    const phase = this.#rng();
 
-    this.#lastGapCenter = gapCenter;
+    this.#lastGapCenter = baseGapCenter;
+    this.#spawned += 1;
     const id = this.#nextPipeId;
     this.#nextPipeId += 1;
 
-    return { id, x: WORLD_WIDTH, gapCenter, gapHeight: pipeGap, scored: false };
+    return {
+      id,
+      x: WORLD_WIDTH,
+      gapCenter: pipeGapCenterAt(baseGapCenter, phase, this.#elapsedMs, movingPipes),
+      baseGapCenter,
+      phase,
+      gapHeight,
+      scored: false,
+    };
   }
 
   #hitsAnyPipe(): boolean {

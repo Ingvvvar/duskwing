@@ -32,7 +32,13 @@ export interface Pipe {
   readonly id: number;
   /** Левый край. Труба едет влево. */
   readonly x: number;
+  /** Действующий центр просвета: уже с учётом вертикального хода трубы. */
   readonly gapCenter: number;
+  /** Центр колебания. Без `movingPipes` совпадает с `gapCenter`. */
+  readonly baseGapCenter: number;
+  /** Фаза колебания, 0…1. Своя у каждой трубы: синхронный ряд читался бы
+   *  как одна сплошная стена, а не как отдельные препятствия. */
+  readonly phase: number;
   readonly gapHeight: number;
   /** Очко за трубу засчитывается ровно один раз — этим флагом. */
   readonly scored: boolean;
@@ -52,6 +58,13 @@ export interface GameState {
   readonly alpha: number;
   readonly score: number;
   readonly elapsedMs: number;
+  /**
+   * Пройденное миром расстояние. Мировая координата экранной точки `x` — это
+   * `travelledX + x`; по ней считаются зоны `airflow`, и по ней же их будет
+   * рисовать рендер. Копится тем же интегралом, что двигает трубы, поэтому
+   * учитывает разгон из `ramp`.
+   */
+  readonly travelledX: number;
   readonly pipes: readonly Pipe[];
 }
 

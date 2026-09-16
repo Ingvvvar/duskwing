@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { STEP_MS } from '../src/game/constants';
 import { Game } from '../src/game/Game';
-import { LEVEL_1 } from '../src/game/levels';
+import { LEVEL_1, LEVEL_5 } from '../src/game/levels';
 import { mulberry32 } from '../src/game/rng';
 import type { GameState } from '../src/game/types';
 import { autopilot, gapCentersFrom, run, started } from './support/simulate';
@@ -22,8 +22,8 @@ const SCRIPT: readonly Frame[] = Array.from({ length: 900 }, (_, index) => ({
   flap: index % 7 === 0,
 }));
 
-function replay(seed: number): GameState[] {
-  const game = new Game(LEVEL_1, mulberry32(seed));
+function replay(seed: number, level = LEVEL_1): GameState[] {
+  const game = new Game(level, mulberry32(seed));
 
   return SCRIPT.map((frame) => {
     if (frame.flap) {
@@ -39,6 +39,14 @@ function replay(seed: number): GameState[] {
 describe('детерминизм', () => {
   it('один сид и один скрипт ввода дают одинаковое состояние на каждом шаге', () => {
     expect(replay(20260916)).toEqual(replay(20260916));
+  });
+
+  it('механики и разгон воспроизводимость не ломают', () => {
+    // Уровень 5: вертикальный ход труб, зоны потоков и ramp разом. Ход трубы
+    // зависит от elapsedMs, снос — от travelledX, разгон — от числа
+    // родившихся труб; любая из этих величин, посчитанная не от состояния,
+    // а от часов или от кадра, здесь бы и всплыла.
+    expect(replay(20260916, LEVEL_5)).toEqual(replay(20260916, LEVEL_5));
   });
 
   it('разные сиды дают разные раскладки', () => {
