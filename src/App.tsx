@@ -3,12 +3,15 @@ import type { ReactElement } from 'react';
 
 import { useGameLoop } from './hooks/useGameLoop';
 import { useProgress } from './hooks/useProgress';
+import { Countdown } from './ui/Countdown';
 import { GameOver } from './ui/GameOver';
 import { Hud } from './ui/Hud';
 import { LevelClear } from './ui/LevelClear';
 import { LevelSelect } from './ui/LevelSelect';
 import { Menu } from './ui/Menu';
 import { MuteButton } from './ui/MuteButton';
+import { PauseButton } from './ui/PauseButton';
+import { PauseOverlay } from './ui/PauseOverlay';
 
 /**
  * Обёртка `stage` нужна ResizeObserver: за самим канвасом наблюдать нельзя,
@@ -25,7 +28,16 @@ export function App(): ReactElement {
   const session = useGameLoop(canvasRef, progressApi);
 
   const best = progressApi.progress.bestScores[String(session.level.id)] ?? 0;
-  const view = session.screen === 'playing' ? session.outcome : session.screen;
+  // Единственная точка, по которой всё меряется снаружи. Пауза и отсчёт —
+  // отдельные значения: различать их в замере нужно.
+  const view =
+    session.screen === 'playing'
+      ? session.countdown > 0
+        ? 'countdown'
+        : session.paused
+          ? 'paused'
+          : session.outcome
+      : session.screen;
 
   return (
     <div className="stage" data-screen={view}>
@@ -33,6 +45,12 @@ export function App(): ReactElement {
 
       {/* Виден на всех экранах: во время игры переключатель нужнее всего. */}
       <MuteButton muted={session.muted} onToggle={session.toggleMuted} />
+
+      {/* Пауза — только в живой попытке: на смерти и на пройденном уровне мир
+          уже заморожен своим способом. */}
+      {session.screen === 'playing' && session.outcome === 'running' && !session.paused ? (
+        <PauseButton onPause={session.pause} />
+      ) : null}
 
       {session.screen === 'menu' ? <Menu onPlay={session.openLevels} /> : null}
 
@@ -66,6 +84,16 @@ export function App(): ReactElement {
           {session.outcome === 'over' ? (
             <GameOver score={session.score} best={best} onRestart={session.restart} />
           ) : null}
+
+          {session.paused ? (
+            <PauseOverlay
+              name={session.level.name}
+              onResume={session.resume}
+              onLeave={session.openLevels}
+            />
+          ) : null}
+
+          {session.countdown > 0 ? <Countdown value={session.countdown} /> : null}
         </>
       ) : null}
     </div>

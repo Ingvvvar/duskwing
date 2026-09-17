@@ -27,10 +27,24 @@ export type Screen = 'menu' | 'levels' | 'playing';
  */
 const DEATH_INPUT_WINDOW_MS = 200;
 
+/**
+ * Отсчёт перед возвратом из паузы.
+ *
+ * Без него птица падает раньше, чем игрок вернёт палец на экран: мир
+ * оживает в тот же кадр, в котором закрылся оверлей. Три секунды — это время
+ * донести руку и поймать положение птицы глазами. Ввод на отсчёте
+ * игнорируется: тап по кнопке «Продолжить» не должен превратиться во взмах.
+ */
+const RESUME_COUNTDOWN_MS = 3000;
+
 export interface Session {
   readonly muted: boolean;
   readonly screen: Screen;
   readonly outcome: RunOutcome;
+  /** Мир остановлен игроком. */
+  readonly paused: boolean;
+  /** Секунд до возврата управления: 3, 2, 1 или 0, когда отсчёта нет. */
+  readonly countdown: number;
   readonly level: LevelConfig;
   readonly score: number;
   readonly showHint: boolean;
@@ -39,6 +53,8 @@ export interface Session {
   readonly openLevels: () => void;
   readonly startLevel: (id: number) => void;
   readonly restart: () => void;
+  readonly pause: () => void;
+  readonly resume: () => void;
   readonly toggleMuted: () => void;
 }
 
@@ -120,6 +136,8 @@ export function useGameLoop(
   const [level, setLevel] = useState<LevelConfig>(LEVEL_1);
   const [score, setScore] = useState(0);
   const [phase, setPhase] = useState<GamePhase>('ready');
+  const [paused, setPaused] = useState(false);
+  const [countdown, setCountdown] = useState(0);
 
   const chainRef = useRef<Promise<void> | null>(null);
   const gameRef = useRef<Game | null>(null);
@@ -134,8 +152,14 @@ export function useGameLoop(
   const deathWindowRef = useRef(0);
   /** Во время окна был ввод: сработает, когда окно закроется. */
   const bufferedRef = useRef(false);
+  /** Мир остановлен игроком — заморозка идёт тем же путём, что и на «уровне пройден». */
+  const pausedRef = useRef(false);
+  /** Остаток отсчёта возврата, мс. Пока он больше нуля, мир тоже заморожен. */
+  const countdownRef = useRef(0);
   const tapRef = useRef<() => void>(() => undefined);
   const restartRef = useRef<() => void>(() => undefined);
+  /** Escape: снаружи эффекта монтирования нужна свежая версия обработчика. */
+  const pauseToggleRef = useRef<() => void>(() => undefined);
   const rendererRef = useRef<PixiRenderer | null>(null);
   const soundRef = useRef<Sound | null>(null);
 
@@ -176,6 +200,10 @@ export function useGameLoop(
       gameRef.current = new Game(config, rng);
       frozenRef.current = false;
       recordedRef.current = false;
+      pausedRef.current = false;
+      countdownRef.current = 0;
+      setPaused(false);
+      setCountdown(0);
       setScore(0);
       setPhase('ready');
       update((previous) => recordAttempt(previous, config.id));
@@ -219,6 +247,37 @@ export function useGameLoop(
     gameRef.current?.flap();
   }, [beginAttempt]);
 
+  /**
+   * Пауза доступна только в живой попытке: на «игра окончена» и «уровень
+   * пройден» мир уже заморожен своим способом, и вторая заморозка поверх него
+   * означала бы два состояния на один экран.
+   */
+  const pause = useCallback((): void => {
+    const game = gameRef.current;
+
+    if (screenRef.current !== 'playing' || frozenRef.current || game === null) {
+      return;
+    }
+
+    if (game.state.phase === 'over' || pausedRef.current || countdownRef.current > 0) {
+      return;
+    }
+
+    pausedRef.current = true;
+    setPaused(true);
+  }, []);
+
+  const resume = useCallback((): void => {
+    if (!pausedRef.current) {
+      return;
+    }
+
+    pausedRef.current = false;
+    countdownRef.current = RESUME_COUNTDOWN_MS;
+    setPaused(false);
+    setCountdown(Math.ceil(RESUME_COUNTDOWN_MS / 1000));
+  }, []);
+
   const leave = useCallback(
     (next: Screen): void => {
       screenRef.current = next;
@@ -231,8 +290,12 @@ export function useGameLoop(
         gameRef.current = new Game(levelRef.current, rng);
         frozenRef.current = false;
         recordedRef.current = true;
+        pausedRef.current = false;
+        countdownRef.current = 0;
         setScore(0);
         setPhase('ready');
+        setPaused(false);
+        setCountdown(0);
       }
     },
     [],
@@ -253,8 +316,28 @@ export function useGameLoop(
   // всю жизнь эффекта, им нужна свежая версия, но запись в реф во время
   // рендера ломает конкурентный рендеринг (react-hooks/refs).
   useEffect(() => {
+    pauseToggleRef.current = (): void => {
+      // На отсчёте Escape молчит: возврат уже запущен, отменять его нечем.
+      if (countdownRef.current > 0) {
+        return;
+      }
+
+      if (pausedRef.current) {
+        resume();
+      } else {
+        pause();
+      }
+    };
+
     tapRef.current = (): void => {
       if (screenRef.current !== 'playing') {
+        return;
+      }
+
+      // На паузе и на отсчёте ввод игнорируется целиком: отсчёт затем и
+      // поставлен, чтобы игрок вернул руку, а не чтобы первый же тап после
+      // «Продолжить» ушёл во взмах.
+      if (pausedRef.current || countdownRef.current > 0) {
         return;
       }
 
@@ -290,7 +373,7 @@ export function useGameLoop(
     };
 
     restartRef.current = restart;
-  }, [openLevels, restart]);
+  }, [openLevels, pause, restart, resume]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -331,6 +414,13 @@ export function useGameLoop(
     };
 
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.code === 'Escape' && !event.repeat) {
+        event.preventDefault();
+        pauseToggleRef.current();
+
+        return;
+      }
+
       // Автоповтор при зажатом пробеле — это не намерение игрока.
       if (event.code !== 'Space' || event.repeat) {
         return;
@@ -342,6 +432,7 @@ export function useGameLoop(
 
     let lastScore = 0;
     let lastPhase: GamePhase = 'ready';
+    let lastCountdown = 0;
 
     const boot = async (): Promise<void> => {
       if (cancelled) {
@@ -375,7 +466,22 @@ export function useGameLoop(
           return;
         }
 
-        const frozen = frozenRef.current;
+        // Отсчёт идёт по тому же dtMs, что и всё остальное, с тем же клампом:
+        // вкладка, ушедшая в фон, не должна отыграть его одним кадром.
+        if (countdownRef.current > 0) {
+          countdownRef.current = Math.max(0, countdownRef.current - Math.min(dtMs, MAX_FRAME_MS));
+
+          const left = Math.ceil(countdownRef.current / 1000);
+
+          if (left !== lastCountdown) {
+            lastCountdown = left;
+            setCountdown(left);
+          }
+        }
+
+        // Пауза и отсчёт замораживают мир ровно тем же способом, что и экран
+        // «уровень пройден»: нулевой dtMs, отдельного механизма нет.
+        const frozen = frozenRef.current || pausedRef.current || countdownRef.current > 0;
 
         if (!frozen) {
           game.step(dtMs);
@@ -481,6 +587,8 @@ export function useGameLoop(
     muted,
     screen,
     outcome: resolveOutcome(score, level.target, phase),
+    paused,
+    countdown,
     level,
     score,
     showHint: shouldShowHint(progressApi.progress, level.id),
@@ -488,6 +596,8 @@ export function useGameLoop(
     openLevels,
     startLevel,
     restart,
+    pause,
+    resume,
     toggleMuted,
   };
 }

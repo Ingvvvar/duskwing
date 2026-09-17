@@ -245,3 +245,72 @@ body {
 .mute[aria-pressed='true'] {
   color: #8d86a3;
 }
+
+/*
+ * Пауза стоит слева от мьюта: 14 px от края плюс ширина мьюта плюс зазор.
+ * Оба угловых элемента далеко от колонки птицы — расстояние измерено, см.
+ * README и отчёт фазы 9.
+ */
+.pause {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  right: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(5 6 14 / 45%);
+  color: #f4efe6;
+  cursor: pointer;
+  /* Поверх оверлеев и канваса: тап обязан достаться кнопке, а не игре. */
+  z-index: 3;
+}
+
+/* Второстепенное действие на экране паузы: уход с уровня не равен возврату. */
+.button--quiet {
+  background: rgb(244 239 230 / 12%);
+  color: #f4efe6;
+}
+
+/*
+ * Отсчёт возврата. Оверлея под ним нет намеренно: мир виден целиком, и игрок
+ * успевает поймать положение птицы до того, как она полетит.
+ */
+.countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.countdown__value {
+  color: #f4efe6;
+  font: 700 84px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 4px 18px rgb(5 6 14 / 70%);
+  transition: none;
+}
+
+/* Последняя секунда обязана читаться иначе: крупнее и тёплым цветом. */
+.countdown__value--last {
+  color: #f2b24c;
+  font-size: 128px;
+  text-shadow: 0 0 28px rgb(242 178 76 / 45%), 0 4px 18px rgb(5 6 14 / 70%);
+}
+
+.countdown__hint {
+  color: #e8dcc0;
+  font: 600 15px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 8px rgb(5 6 14 / 70%);
+}

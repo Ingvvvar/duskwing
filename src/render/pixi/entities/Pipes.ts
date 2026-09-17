@@ -3,6 +3,7 @@ import { Container, NineSliceSprite, Texture } from 'pixi.js';
 import { PIPE_WIDTH } from '../../../game/constants';
 import type { Pipe, Theme } from '../../../game/types';
 import { obstacleLayout } from '../../obstacleLayout';
+import { obstacleReveal } from '../../obstacleReveal';
 import { createObstacleTexture, type ObstacleTexture } from '../textures';
 
 interface PipeView {
@@ -71,8 +72,14 @@ export class PipePool {
 
       const view = this.#active.get(pipe.id) ?? this.#acquire(pipe);
 
+      const drawnX = pipe.x + offsetX;
+
       this.#active.set(pipe.id, view);
-      view.container.x = pipe.x + offsetX;
+      view.container.x = drawnX;
+      // Проявление у правой кромки: препятствие набирает непрозрачность само,
+      // без полосы дымки поверх игрового слоя. Считается по нарисованному
+      // иксу, а не по логическому: показать надо ровно то, что видно.
+      view.container.alpha = obstacleReveal(drawnX);
       this.#place(view, pipe);
     }
 

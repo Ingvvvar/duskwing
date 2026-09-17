@@ -676,21 +676,3 @@ function drawCap(
   context.restore();
 }
 
-/** Дымка у правой кромки: препятствие проступает, а не выезжает из-под маски. */
-export function createEdgeHazeTexture(color: string, width: number, maxAlpha: number): Texture {
-  const context = createCanvas(width, 8);
-  const gradient = context.createLinearGradient(0, 0, width, 0);
-
-  // Квадратичное нарастание: основная ширина почти прозрачна, плотная часть
-  // узкая — иначе препятствие прячется дольше, чем игрок успевает среагировать.
-  for (let i = 0; i <= 10; i += 1) {
-    const t = i / 10;
-
-    gradient.addColorStop(t, rgba(color, maxAlpha * t * t));
-  }
-
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, width, 8);
-
-  return Texture.from(context.canvas);
-}
