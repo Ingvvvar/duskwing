@@ -87,6 +87,30 @@ function rgba(hex: string, alpha: number): string {
 }
 
 /**
+ * Плитка тайлится только по горизонтали.
+ *
+ * По вертикали ставится зажим выборки, а не заворот, и это не перестраховка.
+ * Все тайлящиеся слои прокручиваются лишь по X, а их плитка по высоте равна
+ * высоте слоя — заворот по Y не нужен вовсе. Но при дробном масштабе
+ * устройства (логический мир 360 px на физический экран — это 2.25 device px
+ * на единицу) выборка у верхней кромки захватывает противоположный,
+ * полностью залитый край, и он проступает волосяной линией во всю ширину
+ * кадра. Линия была видна на всех пяти темах: на мировых y 444 и 380 —
+ * кромки гребней, на 476 — кромка переднего плана.
+ *
+ * `TilingSpritePipe` выставляет `addressMode = 'repeat'`, только если геттер
+ * вернул не `'repeat'`, а геттер отдаёт `addressModeU`. Поэтому пара
+ * «repeat по X, зажим по Y» переживает пайплайн, а не перетирается им.
+ */
+function tileHorizontally(texture: Texture): Texture {
+  texture.source.style.addressModeU = 'repeat';
+  texture.source.style.addressModeV = 'clamp-to-edge';
+  texture.source.style.update();
+
+  return texture;
+}
+
+/**
  * Небо: вертикальный градиент в четыре стопа. Холст шириной 8 px, а не во всю
  * ширину мира — градиент вертикальный, растянуть его спрайтом дешевле, чем
  * держать в памяти 920 КБ пикселей.
@@ -196,7 +220,7 @@ export function createRidgeTexture(renderer: Renderer, options: RidgeOptions): T
 
   silhouette.destroy();
 
-  return texture;
+  return tileHorizontally(texture);
 }
 
 /**
@@ -233,7 +257,7 @@ export function createGroundTexture(base: string, top: string): Texture {
     x += 7 + Math.round(random() * 17);
   }
 
-  return Texture.from(context.canvas);
+  return tileHorizontally(Texture.from(context.canvas));
 }
 
 /**
@@ -272,7 +296,7 @@ export function createWindTexture(
     context.fillRect(x, 0, 1, height);
   }
 
-  return Texture.from(context.canvas);
+  return tileHorizontally(Texture.from(context.canvas));
 }
 
 /**
@@ -305,7 +329,7 @@ export function createHazeTexture(color: string, tileHeight: number): Texture {
     }
   }
 
-  return Texture.from(context.canvas);
+  return tileHorizontally(Texture.from(context.canvas));
 }
 
 /**
@@ -391,7 +415,7 @@ export function createForegroundTexture(
     }
   }
 
-  return Texture.from(context.canvas);
+  return tileHorizontally(Texture.from(context.canvas));
 }
 
 /** Виньетка под blendMode multiply: белая в центре, тёмная по краям. */
