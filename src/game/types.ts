@@ -27,6 +27,11 @@ export interface Theme {
   ridgeNear: { color: string; amplitude: number; roughness: number; seed: number };
   haze: { color: string; alpha: number } | null;
   weather: { kind: 'none' | 'rain' | 'snow' | 'fireflies' | 'dust'; count: number; speed: number };
+  /**
+   * Фон уровня. Данные, как и погода: `src/game/**` про звук не знает и знать
+   * не должен, здесь лежит только вид и громкость, а синтез — в `src/audio/`.
+   */
+  ambience: { kind: 'none' | 'wind' | 'night' | 'rain' | 'gusts' | 'hum'; level: number };
   ground: { base: string; top: string };
   foreground: { kind: 'none' | 'grass' | 'streaks' | 'rocks'; blur: number };
   grade: { saturation: number; brightness: number; tint: string; vignette: number };

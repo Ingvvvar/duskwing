@@ -16,6 +16,7 @@ export const DUSK: Theme = {
   ridgeNear: { color: '#181E42', amplitude: 64, roughness: 9, seed: 4242 },
   haze: null,
   weather: { kind: 'none', count: 0, speed: 0 },
+  ambience: { kind: 'wind', level: 0.45 },
   ground: { base: '#10152F', top: '#2A2350' },
   foreground: { kind: 'none', blur: 0 },
   grade: { saturation: 1.04, brightness: 1, tint: '#FFE8C8', vignette: 0.18 },
@@ -33,6 +34,7 @@ export const NIGHT: Theme = {
   ridgeNear: { color: '#0D1230', amplitude: 62, roughness: 9, seed: 2202 },
   haze: null,
   weather: { kind: 'fireflies', count: 40, speed: 1 },
+  ambience: { kind: 'night', level: 0.55 },
   ground: { base: '#070A1C', top: '#1B2450' },
   foreground: { kind: 'grass', blur: 3 },
   grade: { saturation: 0.85, brightness: 1, tint: '#C8D8FF', vignette: 0.24 },
@@ -49,6 +51,7 @@ export const STORM: Theme = {
   ridgeNear: { color: '#161D27', amplitude: 66, roughness: 10, seed: 3302 },
   haze: { color: '#8E9BA6', alpha: 0.14 },
   weather: { kind: 'rain', count: 300, speed: 1.1 },
+  ambience: { kind: 'rain', level: 1 },
   ground: { base: '#10161F', top: '#2E3B48' },
   foreground: { kind: 'streaks', blur: 2 },
   grade: { saturation: 0.65, brightness: 0.98, tint: '#D6E2EC', vignette: 0.3 },
@@ -70,6 +73,7 @@ export const CANYON: Theme = {
   ridgeNear: { color: '#2A1822', amplitude: 68, roughness: 9, seed: 4402 },
   haze: { color: '#E0A070', alpha: 0.1 },
   weather: { kind: 'dust', count: 120, speed: 0.6 },
+  ambience: { kind: 'gusts', level: 0.8 },
   ground: { base: '#1E1018', top: '#5A2E38' },
   foreground: { kind: 'rocks', blur: 2 },
   grade: { saturation: 1.1, brightness: 1, tint: '#FFD8B0', vignette: 0.26 },
@@ -86,6 +90,7 @@ export const VOID: Theme = {
   ridgeNear: { color: '#08091A', amplitude: 64, roughness: 9, seed: 5502 },
   haze: { color: '#3BE0C0', alpha: 0.16 },
   weather: { kind: 'none', count: 0, speed: 0 },
+  ambience: { kind: 'hum', level: 0.7 },
   ground: { base: '#04050C', top: '#1A1233' },
   foreground: { kind: 'none', blur: 0 },
   grade: { saturation: 0.55, brightness: 0.95, tint: '#C8D0FF', vignette: 0.42 },
@@ -164,6 +169,7 @@ export function interpolateTheme(from: Theme, to: Theme, t: number): Theme {
     },
     haze: mixHaze(from.haze, to.haze, k),
     weather: late ? to.weather : from.weather,
+    ambience: late ? to.ambience : from.ambience,
     ground: {
       base: mixHex(from.ground.base, to.ground.base, k),
       top: mixHex(from.ground.top, to.ground.top, k),
@@ -205,11 +211,27 @@ export const ENDLESS_FULL_SCORE = 60;
  * Погода бесконечного режима переключается на порогах: вид погоды — не число,
  * интерполировать его нечем.
  */
-const ENDLESS_WEATHER: readonly { readonly from: number; readonly weather: Theme['weather'] }[] = [
-  { from: 0, weather: { kind: 'none', count: 0, speed: 0 } },
-  { from: 12, weather: { kind: 'fireflies', count: 40, speed: 1 } },
-  { from: 28, weather: { kind: 'dust', count: 120, speed: 0.7 } },
-  { from: 45, weather: { kind: 'rain', count: 240, speed: 1.1 } },
+const ENDLESS_WEATHER: readonly {
+  readonly from: number;
+  readonly weather: Theme['weather'];
+  readonly ambience: Theme['ambience'];
+}[] = [
+  { from: 0, weather: { kind: 'none', count: 0, speed: 0 }, ambience: { kind: 'wind', level: 0.45 } },
+  {
+    from: 12,
+    weather: { kind: 'fireflies', count: 40, speed: 1 },
+    ambience: { kind: 'night', level: 0.55 },
+  },
+  {
+    from: 28,
+    weather: { kind: 'dust', count: 120, speed: 0.7 },
+    ambience: { kind: 'gusts', level: 0.8 },
+  },
+  {
+    from: 45,
+    weather: { kind: 'rain', count: 240, speed: 1.1 },
+    ambience: { kind: 'rain', level: 1 },
+  },
 ];
 
 /** Тема бесконечного режима по счёту: палитра и грейд текут от dusk к void. */
@@ -217,7 +239,12 @@ export function endlessTheme(score: number): Theme {
   const blended = interpolateTheme(DUSK, VOID, score / ENDLESS_FULL_SCORE);
   const step = [...ENDLESS_WEATHER].reverse().find((entry) => score >= entry.from);
 
-  return { ...blended, id: 'endless', weather: step?.weather ?? blended.weather };
+  return {
+    ...blended,
+    id: 'endless',
+    weather: step?.weather ?? blended.weather,
+    ambience: step?.ambience ?? blended.ambience,
+  };
 }
 
 /**
@@ -237,6 +264,7 @@ export const DEBUG_THEME: Theme = {
   ridgeNear: { color: '#151B3D', amplitude: 70, roughness: 11, seed: 9002 },
   haze: { color: '#7FE3FF', alpha: 0.18 },
   weather: { kind: 'rain', count: 300, speed: 1 },
+  ambience: { kind: 'rain', level: 0.8 },
   ground: { base: '#0E1024', top: '#3A2E5E' },
   foreground: { kind: 'grass', blur: 3 },
   grade: { saturation: 0.8, brightness: 1.1, tint: '#FF00E6', vignette: 0.5 },

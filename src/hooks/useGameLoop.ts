@@ -11,7 +11,7 @@ import type { Rng } from '../game/rng';
 import { DEBUG_THEME, endlessTheme, findTheme, THEMES } from '../game/themes';
 import type { GamePhase, LevelConfig, Theme } from '../game/types';
 import { PixiRenderer } from '../render/pixi/PixiRenderer';
-import { Sound } from '../audio/sound';
+import { AMBIENCE_DEATH_FADE_MS, AMBIENCE_PAUSED, Sound } from '../audio/sound';
 import type { ProgressApi } from './useProgress';
 
 export type Screen = 'menu' | 'levels' | 'playing';
@@ -204,6 +204,7 @@ export function useGameLoop(
       countdownRef.current = 0;
       setPaused(false);
       setCountdown(0);
+      soundRef.current?.setAmbienceLevel(1, 120);
       setScore(0);
       setPhase('ready');
       update((previous) => recordAttempt(previous, config.id));
@@ -220,11 +221,18 @@ export function useGameLoop(
       }
 
       levelRef.current = config;
+      // Клик по карточке — жест, значит контекст можно открыть здесь, и фон
+      // начнётся вместе с уровнем, а не с первого взмаха.
+      soundRef.current?.warmUp();
       // Скорость прокрутки фона и зоны для полос ветра берутся из конфига
       // уровня — рендер обязан узнать о смене сразу, а не при следующем
       // монтировании.
       rendererRef.current?.setLevel(config);
-      rendererRef.current?.setTheme(readThemeOverride() ?? themeFor(config, 0), 0);
+      const entering = readThemeOverride() ?? themeFor(config, 0);
+
+      rendererRef.current?.setTheme(entering, 0);
+      soundRef.current?.setAmbience(entering.ambience, 0);
+      soundRef.current?.setAmbienceLevel(1, 120);
       screenRef.current = 'playing';
       setLevel(config);
       setScreen('playing');
@@ -265,6 +273,8 @@ export function useGameLoop(
 
     pausedRef.current = true;
     setPaused(true);
+    // Фон приглушается, но не выключается: уровень должен остаться на слуху.
+    soundRef.current?.setAmbienceLevel(AMBIENCE_PAUSED, 250);
   }, []);
 
   const resume = useCallback((): void => {
@@ -276,12 +286,16 @@ export function useGameLoop(
     countdownRef.current = RESUME_COUNTDOWN_MS;
     setPaused(false);
     setCountdown(Math.ceil(RESUME_COUNTDOWN_MS / 1000));
+    // На отсчёте фон остаётся приглушённым и поднимается вместе с миром.
+    soundRef.current?.setAmbienceLevel(AMBIENCE_PAUSED, 120);
   }, []);
 
   const leave = useCallback(
     (next: Screen): void => {
       screenRef.current = next;
       setScreen(next);
+      // В меню и на выборе уровня фона нет вовсе.
+      soundRef.current?.stopAmbience();
       // Уходя с уровня, ставим мир в спокойное состояние: за меню не должна
       // висеть замершая мёртвая птица.
       const rng = rngRef.current;
@@ -386,6 +400,7 @@ export function useGameLoop(
     let renderer: PixiRenderer | null = null;
     let stopFrames: (() => void) | null = null;
     let detachResize: (() => void) | null = null;
+    let detachFlash: (() => void) | null = null;
 
     const sound = new Sound();
 
@@ -456,6 +471,11 @@ export function useGameLoop(
       // Уровень мог быть выбран, пока шёл await init.
       created.setLevel(levelRef.current);
       detachResize = observeSize(canvas, created);
+      // Гром идёт от того же события, что и вспышка: у него нет своего
+      // расписания, иначе гроза разъедется сама с собой.
+      detachFlash = created.onFlash(() => {
+        sound.flash();
+      });
       canvas.addEventListener('pointerdown', onPointerDown);
       window.addEventListener('keydown', onKeyDown);
 
@@ -490,6 +510,9 @@ export function useGameLoop(
         // Заморозка полная: нулевой dtMs останавливает и прокрутку фона, и
         // погоду, которые считаются в рендере, а не в логике.
         created.draw(game.state, frozen ? 0 : dtMs);
+        // Порывы каньона, ночные ноты и очередь грома двигаются тем же
+        // временем: на паузе фон звучит, но гром ждёт вместе с миром.
+        sound.update(game.state, levelRef.current, frozen ? 0 : dtMs);
 
         const state = game.state;
 
@@ -502,7 +525,10 @@ export function useGameLoop(
           // Бесконечный режим: палитра и грейд перетекают по счёту. Смена
           // мгновенная, кроссфейд здесь был бы шагами вместо перетекания.
           if (levelRef.current.id === ENDLESS.id && readThemeOverride() === null) {
-            created.setTheme(endlessTheme(state.score), 0);
+            const next = endlessTheme(state.score);
+
+            created.setTheme(next, 0);
+            sound.setAmbience(next.ambience, CROSSFADE_MS);
           }
         }
 
@@ -511,6 +537,7 @@ export function useGameLoop(
             deathWindowRef.current = DEATH_INPUT_WINDOW_MS;
             bufferedRef.current = false;
             sound.play('hit');
+            sound.setAmbienceLevel(0, AMBIENCE_DEATH_FADE_MS);
           }
 
           lastPhase = state.phase;
@@ -539,8 +566,13 @@ export function useGameLoop(
           const upcoming = findLevel(config.id + 1);
 
           if (upcoming !== undefined && readThemeOverride() === null) {
-            created.setTheme(themeFor(upcoming, 0), CROSSFADE_MS);
+            const next = themeFor(upcoming, 0);
+
+            created.setTheme(next, CROSSFADE_MS);
+            sound.setAmbience(next.ambience, CROSSFADE_MS);
           }
+
+          sound.setAmbienceLevel(AMBIENCE_PAUSED, 400);
         }
 
         if (!recordedRef.current && (reachedTarget || state.phase === 'over')) {
@@ -571,6 +603,7 @@ export function useGameLoop(
       soundRef.current = null;
       stopFrames?.();
       detachResize?.();
+      detachFlash?.();
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('keydown', onKeyDown);
 

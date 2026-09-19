@@ -59,6 +59,13 @@ export class PixiRenderer implements Renderer {
   #reducedMotion = false;
 
   /**
+   * Подписчики на вспышку молнии. Не часть контракта `Renderer`: тот работает
+   * с состоянием, а вспышка — событие рендера. Гром обязан идти от него же, а
+   * не от своего расписания: два источника одного явления расходятся.
+   */
+  readonly #flashListeners = new Set<() => void>();
+
+  /**
    * Пройденное фоном расстояние. Величина чисто визуальная, поэтому копится
    * здесь, а не в `GameState`.
    */
@@ -223,9 +230,25 @@ export class PixiRenderer implements Renderer {
     // не двигаются ни пружины, ни моргание, ни холостое колебание.
     bird.update(state, pace > 0 ? stepMs : 0, this.#config.flapVelocity, this.#reducedMotion);
 
-    this.#current?.update(state, dtMs, this.#scrollX, advance);
+    const flashed = this.#current?.update(state, dtMs, this.#scrollX, advance) ?? false;
+
     this.#next?.update(state, dtMs, this.#scrollX, advance);
     this.#advanceFade(stepMs);
+
+    if (flashed) {
+      for (const listener of this.#flashListeners) {
+        listener();
+      }
+    }
+  }
+
+  /** Подписка на вспышку молнии; возвращает отписку. */
+  onFlash(listener: () => void): () => void {
+    this.#flashListeners.add(listener);
+
+    return () => {
+      this.#flashListeners.delete(listener);
+    };
   }
 
   resize(width: number, height: number): void {

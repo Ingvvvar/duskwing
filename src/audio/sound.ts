@@ -7,7 +7,37 @@
  * обновляет счёт и фазу.
  */
 
+import { mulberry32 } from '../game/rng';
+import type { GameState, LevelConfig, Theme } from '../game/types';
+import { Ambience } from './ambience';
+import { ThunderQueue } from './thunder';
+
 export type SoundName = 'flap' | 'score' | 'hit' | 'clear';
+
+/**
+ * Фон заметно тише эффектов, и на информативных эффектах он приседает.
+ *
+ * Приседают не все: взмах идёт по несколько раз в секунду, и фон дёргался бы
+ * непрерывно. Приседают очко и прохождение уровня — это информация, которую
+ * нельзя утопить в дожде, — и удар, где фон и так уходит в тишину.
+ */
+const DUCKING: Readonly<Record<SoundName, boolean>> = {
+  flap: false,
+  score: true,
+  clear: true,
+  hit: true,
+};
+
+const DUCK_DEPTH = 0.3;
+const DUCK_ATTACK_S = 0.04;
+const DUCK_RELEASE_S = 0.26;
+
+/** Насколько фон приглушается на паузе и на отсчёте. Не выключается. */
+export const AMBIENCE_PAUSED = 0.35;
+/** За сколько фон затухает вместе с замиранием мира на смерти. */
+export const AMBIENCE_DEATH_FADE_MS = 600;
+
+const THUNDER_SEED = 20260923;
 
 interface Voice {
   readonly type: OscillatorType;
@@ -34,7 +64,15 @@ const VOICES: Readonly<Record<SoundName, readonly Voice[]>> = {
 
 interface Channel {
   readonly context: AudioContext;
+  /** Мьют глушит здесь — один переключатель на обе шины. */
   readonly master: GainNode;
+  readonly sfx: GainNode;
+  /** Состояние фона: игра, пауза, смерть. */
+  readonly state: GainNode;
+  /** Приседание под информативные эффекты. */
+  readonly duck: GainNode;
+  readonly ambience: Ambience;
+  readonly thunder: ThunderQueue;
 }
 
 export class Sound {
@@ -70,6 +108,72 @@ export class Sound {
     for (const voice of VOICES[name]) {
       this.#voice(channel, voice);
     }
+
+    if (DUCKING[name]) {
+      Sound.#duck(channel);
+    }
+  }
+
+  /**
+   * Открыть контекст заранее, внутри жеста.
+   *
+   * Клик по карточке уровня — такой же жест, как тап по канвасу, и он
+   * случается раньше первого взмаха. Благодаря этому фон начинается вместе с
+   * уровнем, а не с первого тапа. Раньше жеста по-прежнему не создаётся ничего.
+   */
+  warmUp(): void {
+    this.#open();
+  }
+
+  /** Сменить фон уровня. Длительность та же, что у кроссфейда картинки. */
+  setAmbience(ambience: Theme['ambience'], fadeMs: number): void {
+    this.#open()?.ambience.set(ambience, fadeMs);
+  }
+
+  /** Фон замолкает: уход в меню или выбор уровня. */
+  stopAmbience(fadeMs = 200): void {
+    this.#channel?.ambience.stop(fadeMs);
+  }
+
+  /** Громкость фона по состоянию игры: 1 — игра, меньше — пауза, 0 — смерть. */
+  setAmbienceLevel(level: number, fadeMs: number): void {
+    const channel = this.#channel;
+
+    if (channel === null) {
+      return;
+    }
+
+    const now = channel.context.currentTime;
+
+    channel.state.gain.cancelScheduledValues(now);
+    channel.state.gain.setValueAtTime(Math.max(0.0001, channel.state.gain.value), now);
+    channel.state.gain.exponentialRampToValueAtTime(
+      Math.max(0.0001, level),
+      now + Math.max(0.001, fadeMs / 1000),
+    );
+  }
+
+  /** Вспышка молнии: гром ставится в очередь, а не звучит сразу. */
+  flash(): void {
+    this.#channel?.thunder.onFlash();
+  }
+
+  /**
+   * Покадровое: порывы каньона, ночные ноты и очередь грома. Двигается тем же
+   * `dtMs`, что и мир, — на паузе фон живёт, но гром ждёт.
+   */
+  update(state: GameState, config: LevelConfig, dtMs: number): void {
+    const channel = this.#channel;
+
+    if (channel === null) {
+      return;
+    }
+
+    channel.ambience.update(state, config, dtMs);
+
+    for (let i = channel.thunder.advance(dtMs); i > 0; i -= 1) {
+      channel.ambience.thunder();
+    }
   }
 
   destroy(): void {
@@ -78,8 +182,20 @@ export class Sound {
     this.#channel = null;
 
     if (channel !== null) {
+      channel.ambience.destroy();
       void channel.context.close();
     }
+  }
+
+  /** Приседание: быстро вниз, медленно обратно. */
+  static #duck(channel: Channel): void {
+    const now = channel.context.currentTime;
+    const { gain } = channel.duck;
+
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(Math.max(0.0001, gain.value), now);
+    gain.exponentialRampToValueAtTime(DUCK_DEPTH, now + DUCK_ATTACK_S);
+    gain.setTargetAtTime(1, now + DUCK_ATTACK_S, DUCK_RELEASE_S);
   }
 
   #open(): Channel | null {
@@ -95,10 +211,26 @@ export class Sound {
     try {
       const context = new AudioContext();
       const master = context.createGain();
+      const sfx = context.createGain();
+      const state = context.createGain();
+      const duck = context.createGain();
 
       master.gain.value = this.#muted ? 0 : 1;
       master.connect(context.destination);
-      this.#channel = { context, master };
+      // Эффекты идут мимо приседания, фон — через него: приседает только фон.
+      sfx.connect(master);
+      state.connect(master);
+      duck.connect(state);
+
+      this.#channel = {
+        context,
+        master,
+        sfx,
+        state,
+        duck,
+        ambience: new Ambience(context, duck),
+        thunder: new ThunderQueue(mulberry32(THUNDER_SEED)),
+      };
 
       return this.#channel;
     } catch {
@@ -108,7 +240,7 @@ export class Sound {
   }
 
   #voice(channel: Channel, voice: Voice): void {
-    const { context, master } = channel;
+    const { context, sfx } = channel;
     const start = context.currentTime + (voice.delayMs ?? 0) / 1000;
     const end = start + voice.durationMs / 1000;
     const oscillator = context.createOscillator();
@@ -128,7 +260,7 @@ export class Sound {
     envelope.gain.exponentialRampToValueAtTime(0.0001, end);
 
     oscillator.connect(envelope);
-    envelope.connect(master);
+    envelope.connect(sfx);
     oscillator.start(start);
     oscillator.stop(end + 0.02);
   }

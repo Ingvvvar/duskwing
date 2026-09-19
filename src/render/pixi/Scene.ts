@@ -87,7 +87,8 @@ export class Scene {
     this.#weatherKind = theme.weather.kind;
   }
 
-  update(state: GameState, dtMs: number, scrollX: number, advance: number): void {
+  /** @returns вспышка молнии началась на этом кадре — от неё звучит гром. */
+  update(state: GameState, dtMs: number, scrollX: number, advance: number): boolean {
     // Слой 0 с параллаксом 0 не прокручивается вовсе. Коэффициенты берутся
     // одним местом: врозь они разъезжались бы с таблицей незаметно.
     const offset = layerScroll(scrollX);
@@ -99,7 +100,8 @@ export class Scene {
     this.#ground.scroll(offset.ground);
     this.#foreground.scroll(offset.foreground);
     this.#wind.update(state);
-    this.#lightning.update(state, dtMs);
+
+    const flashed = this.#lightning.update(state, dtMs);
 
     const stepMs = Number.isFinite(dtMs) && dtMs > 0 ? Math.min(dtMs, MAX_FRAME_MS) : 0;
 
@@ -107,6 +109,8 @@ export class Scene {
       (stepMs * (advance === 0 ? 0 : 1)) / 1000,
       weatherDrift(advance, this.#weatherKind),
     );
+
+    return flashed;
   }
 
   setAlpha(alpha: number): void {
