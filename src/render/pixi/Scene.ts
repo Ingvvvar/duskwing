@@ -2,7 +2,7 @@ import { Container, type Renderer } from 'pixi.js';
 
 import { MAX_FRAME_MS } from '../../game/constants';
 import type { GameState, LevelConfig, Theme } from '../../game/types';
-import { layerScroll, weatherDrift } from '../parallax';
+import { flowDrift, layerScroll, weatherDrift } from '../parallax';
 import { CelestialLayer } from './layers/Celestial';
 import { ForegroundLayer } from './layers/Foreground';
 import { GradeLayer } from './layers/Grade';
@@ -12,7 +12,6 @@ import { LightningLayer } from './layers/Lightning';
 import { RidgeLayer } from './layers/Ridges';
 import { SkyLayer } from './layers/Sky';
 import { WeatherLayer } from './layers/Weather';
-import { WindLayer } from './layers/Wind';
 
 /**
  * Вертикальная раскладка гребней. В ТЗ её нет: дальний гребень выше и мельче,
@@ -39,13 +38,14 @@ export class Scene {
   readonly #ridgeFar = new RidgeLayer('ridge-far');
   readonly #ridgeNear = new RidgeLayer('ridge-near');
   readonly #haze = new HazeLayer();
-  readonly #wind = new WindLayer();
   readonly #weather = new WeatherLayer();
   readonly #lightning = new LightningLayer();
   readonly #ground = new GroundLayer();
   readonly #foreground = new ForegroundLayer();
 
   #weatherKind: Theme['weather']['kind'] = 'none';
+  /** В кадре есть телеграф зон: он задаёт снос всему контейнеру частиц. */
+  #hasFlow = false;
 
   constructor() {
     this.background.addChild(
@@ -54,7 +54,6 @@ export class Scene {
       this.#ridgeFar.view,
       this.#ridgeNear.view,
       this.#haze.view,
-      this.#wind.view,
       this.#weather.view,
       // Вспышка светит небу, а не трубам: игровой слой лежит выше и остаётся
       // тёмным силуэтом, как и положено.
@@ -77,8 +76,8 @@ export class Scene {
     this.#ridgeFar.setTheme(renderer, theme.ridgeFar, RIDGE_FAR);
     this.#ridgeNear.setTheme(renderer, theme.ridgeNear, RIDGE_NEAR);
     this.#haze.setTheme(theme);
-    this.#wind.setTheme(theme, level.mechanics.airflow);
-    this.#weather.setTheme(theme, reducedMotion);
+    this.#weather.setTheme(theme, level.mechanics.airflow, reducedMotion);
+    this.#hasFlow = level.mechanics.airflow !== undefined;
     this.#lightning.setTheme(theme, reducedMotion);
     this.#ground.setTheme(theme);
     this.#foreground.setTheme(theme);
@@ -99,15 +98,17 @@ export class Scene {
     this.#haze.scroll(offset.haze);
     this.#ground.scroll(offset.ground);
     this.#foreground.scroll(offset.foreground);
-    this.#wind.update(state);
-
     const flashed = this.#lightning.update(state, dtMs);
 
     const stepMs = Number.isFinite(dtMs) && dtMs > 0 ? Math.min(dtMs, MAX_FRAME_MS) : 0;
 
+    // Контейнер частиц один на погоду и телеграф, значит и снос у него один.
+    // Там, где телеграф есть, он и задаёт скорость: у каньона она совпадает с
+    // пылью, у пустоты погоды нет вовсе.
     this.#weather.update(
       (stepMs * (advance === 0 ? 0 : 1)) / 1000,
-      weatherDrift(advance, this.#weatherKind),
+      this.#hasFlow ? flowDrift(advance) : weatherDrift(advance, this.#weatherKind),
+      state.travelledX,
     );
 
     return flashed;
@@ -127,7 +128,6 @@ export class Scene {
     this.#ridgeFar.destroy();
     this.#ridgeNear.destroy();
     this.#haze.destroy();
-    this.#wind.destroy();
     this.#weather.destroy();
     this.#lightning.destroy();
     this.#ground.destroy();

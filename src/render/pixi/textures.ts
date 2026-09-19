@@ -7,7 +7,6 @@ import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from '../../game/constants';
-import { airflowNormalised, airflowPeriod } from '../../game/mechanics';
 import { mulberry32 } from '../../game/rng';
 import type { Theme } from '../../game/types';
 
@@ -260,44 +259,6 @@ export function createGroundTexture(base: string, top: string): Texture {
   return tileHorizontally(Texture.from(context.canvas));
 }
 
-/**
- * Полосы ветра: плитка шириной ровно в один период зон `airflow`.
- *
- * Значения берутся из `airflowNormalised` — той же функции, по которой
- * считает физика. Своей формулы здесь нет и быть не должно: плитка ширины
- * периода, сдвинутая на `travelledX`, попадает в зоны точно.
- *
- * Восходящий поток и нисходящий различаются знаком и потому цветом; альфа
- * мягко нарастает к середине зоны, чтобы полоса не читалась как препятствие.
- */
-export function createWindTexture(
-  airflow: { zones: number; strength: number },
-  upColor: string,
-  downColor: string,
-  maxAlpha: number,
-  height: number,
-): Texture {
-  const width = Math.round(airflowPeriod(airflow));
-  // Высота плитки равна высоте слоя: по горизонтали заворот нужен и работает
-  // ровно по периоду зон, а вертикальный повтор резал бы градиент и давал
-  // горизонтальные полосы поперёк экрана.
-  const context = createCanvas(width, height);
-
-  for (let x = 0; x < width; x += 1) {
-    const value = airflowNormalised(x, airflow);
-    const gradient = context.createLinearGradient(0, 0, 0, height);
-    const color = value >= 0 ? downColor : upColor;
-    const alpha = Math.abs(value) * maxAlpha;
-
-    gradient.addColorStop(0, rgba(color, 0));
-    gradient.addColorStop(0.5, rgba(color, alpha));
-    gradient.addColorStop(1, rgba(color, 0));
-    context.fillStyle = gradient;
-    context.fillRect(x, 0, 1, height);
-  }
-
-  return tileHorizontally(Texture.from(context.canvas));
-}
 
 /**
  * Дымка: мягкие пятна под blendMode screen.

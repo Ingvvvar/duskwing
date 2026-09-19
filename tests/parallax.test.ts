@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   FALSE_MOTION_BAND,
   FALSE_MOTION_EXEMPT,
+  flowDrift,
   layerScroll,
   PARALLAX,
   weatherDrift,
-  windTileOffset,
 } from '../src/render/parallax';
 
 describe('контракт читаемости: параллакс', () => {
@@ -29,12 +29,17 @@ describe('контракт читаемости: параллакс', () => {
     expect(Object.keys(PARALLAX).length).toBeGreaterThan(0);
   });
 
-  it('список исключений закрытый', () => {
+  it('список исключений закрытый и состоит из одной земли', () => {
     // Каждая строка здесь — ослабление контракта читаемости, и появляться
     // она должна осознанно, вместе с записанной причиной в parallax.ts.
-    // Земля обязана идти со скоростью игры; полосы ветра — телеграф механики,
-    // они обязаны совпадать с зонами airflow.
-    expect([...FALSE_MOTION_EXEMPT].sort()).toEqual(['ground', 'wind']);
+    // Телеграф зон потока в исключении больше не нуждается: частицы берут
+    // вертикальную скорость от своей мировой координаты каждый кадр.
+    expect([...FALSE_MOTION_EXEMPT]).toEqual(['ground']);
+  });
+
+  it('частицы потока идут вне запретной полосы', () => {
+    expect(PARALLAX.flow).toBe(0.7);
+    expect(PARALLAX.flow).toBeLessThan(0.85);
   });
 });
 
@@ -67,47 +72,15 @@ describe('применение параллакса к слоям', () => {
     expect(offset.ridgeFar).toBeGreaterThan(offset.celestial);
   });
 
+  it('снос телеграфа зон идёт вне запретной полосы', () => {
+    expect(flowDrift(100)).toBeCloseTo(70, 10);
+  });
+
   it('снос погоды: по виду, и ноль, когда погоды нет', () => {
     expect(weatherDrift(100, 'rain')).toBeCloseTo(80, 10);
     expect(weatherDrift(100, 'snow')).toBeCloseTo(60, 10);
     expect(weatherDrift(100, 'fireflies')).toBeCloseTo(65, 10);
     expect(weatherDrift(100, 'dust')).toBeCloseTo(70, 10);
     expect(weatherDrift(100, 'none')).toBe(0);
-  });
-});
-
-/**
- * Полосы ветра идут ровно со скоростью мира — это не параллакс, а телеграф
- * механики. Проверяется не значение коэффициента, а его отсутствие: смещение
- * плитки обязано меняться на столько же, на сколько прошёл мир.
- */
-describe('смещение полос ветра', () => {
-  const PERIOD = 240;
-
-  it('коэффициента нет: мир прошёл 50 — полоса сдвинулась на 50', () => {
-    const before = windTileOffset(10, PERIOD);
-    const after = windTileOffset(60, PERIOD);
-
-    expect(before - after).toBeCloseTo(50, 10);
-  });
-
-  it('заворот ровно по периоду, а не по его части', () => {
-    expect(windTileOffset(35 + PERIOD, PERIOD)).toBeCloseTo(windTileOffset(35, PERIOD), 10);
-    expect(windTileOffset(35 - PERIOD, PERIOD)).toBeCloseTo(windTileOffset(35, PERIOD), 10);
-
-    // Одного лишь равенства через период мало: заворот по половине периода
-    // ему тоже удовлетворяет. Поэтому проверяется, что смещение доходит до
-    // дальнего края — прямо перед заворотом оно почти в целый период.
-    expect(windTileOffset(PERIOD - 1, PERIOD)).toBeCloseTo(-(PERIOD - 1), 10);
-    expect(windTileOffset(PERIOD / 2 + 1, PERIOD)).toBeCloseTo(-(PERIOD / 2 + 1), 10);
-  });
-
-  it('смещение всегда в пределах одного периода и не положительно', () => {
-    for (const travelled of [-1000, -1, 0, 1, 239, 240, 241, 10_000]) {
-      const offset = windTileOffset(travelled, PERIOD);
-
-      expect(offset).toBeLessThanOrEqual(0);
-      expect(offset).toBeGreaterThan(-PERIOD);
-    }
   });
 });
