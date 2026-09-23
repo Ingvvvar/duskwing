@@ -102,7 +102,7 @@ export class Ambience {
         this.#gustLeftMs = GUST_UPDATE_MS;
 
         const airflow = config.mechanics.airflow;
-        // Та же функция, что ведёт физику и полосы ветра. Третьего источника
+        // Та же функция, что ведёт физику и частицы потока. Другого источника
         // координат зон в проекте нет и не будет.
         const flow =
           airflow === undefined ? 0 : airflowNormalised(state.travelledX + BIRD_X, airflow);

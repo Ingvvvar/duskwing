@@ -106,8 +106,8 @@ export class Game {
     this.#prevBirdY = this.#birdY;
     this.#elapsedMs += STEP_MS;
 
-    // Поток считается для мировой позиции птицы той же функцией, которой в
-    // подходе Б рендер будет рисовать полосы ветра.
+    // Поток считается для мировой позиции птицы той же функцией, по которой
+    // рендер двигает частицы потока.
     const { airflow } = this.#config.mechanics;
     const drift = airflow === undefined ? 0 : airflowAt(this.#travelledX + BIRD_X, airflow);
 
