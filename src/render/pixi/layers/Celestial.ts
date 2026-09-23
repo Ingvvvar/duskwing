@@ -42,8 +42,8 @@ export class CelestialLayer {
   setTheme(theme: Theme): void {
     // Кэш снимается до пересборки и ставится заново после: запечённая
     // текстура не знает, что тема сменилась, и показывала бы прежнюю.
-    // В подходе Б на контейнер фона сядет ColorMatrixFilter — тем важнее,
-    // чтобы кэш пересобирался вместе с темой, а не жил своей жизнью.
+    // На контейнере фона стоит ColorMatrixFilter грейда — тем важнее, чтобы
+    // кэш пересобирался вместе с темой, а не жил своей жизнью.
     this.view.cacheAsTexture(false);
     this.view.removeChildren().forEach((child) => {
       child.destroy({ children: true });

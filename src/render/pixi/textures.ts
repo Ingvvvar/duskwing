@@ -298,7 +298,7 @@ export function createHazeTexture(color: string, tileHeight: number): Texture {
  * частице, поэтому текстура одна на контейнер, как того требует
  * ParticleContainer.
  */
-export function createParticleTexture(kind: Theme['weather']['kind']): Texture {
+function createParticleTexture(kind: Theme['weather']['kind']): Texture {
   if (kind === 'rain') {
     const context = createCanvas(2, 16);
     const gradient = context.createLinearGradient(0, 0, 0, 16);
@@ -323,6 +323,44 @@ export function createParticleTexture(kind: Theme['weather']['kind']): Texture {
   context.fillRect(0, 0, size, size);
 
   return Texture.from(context.canvas);
+}
+
+/**
+ * Текстуры частиц — по одной на вид погоды на всё время жизни рендерера.
+ *
+ * Текстура белая, цвет приходит тинтом, поэтому зависит только от вида и между
+ * темами не меняется. Сцена её не уничтожает, и это не экономия, а причина:
+ * общий шейдер конвейера частиц у Pixi держит последнюю текстуру до
+ * следующего рендера частиц, и текстура, уничтоженная на смене темы,
+ * оказывалась уничтоженной в использовании. Неуничтожаемая такой быть не может.
+ *
+ * Владеет кэшем рендерер и уничтожает его после `app.destroy`, когда
+ * конвейер частиц вместе со своим шейдером уже снят.
+ */
+export class ParticleTextures {
+  readonly #textures = new Map<Theme['weather']['kind'], Texture>();
+
+  get(kind: Theme['weather']['kind']): Texture {
+    const cached = this.#textures.get(kind);
+
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const texture = createParticleTexture(kind);
+
+    this.#textures.set(kind, texture);
+
+    return texture;
+  }
+
+  destroy(): void {
+    for (const texture of this.#textures.values()) {
+      texture.destroy(true);
+    }
+
+    this.#textures.clear();
+  }
 }
 
 /**

@@ -5,6 +5,7 @@ import type { GameState, LevelConfig, Renderer, Theme } from '../../game/types';
 import { BirdRig } from './entities/Bird';
 import { PipePool } from './entities/Pipes';
 import { Scene } from './Scene';
+import { ParticleTextures } from './textures';
 
 const LETTERBOX = 0x05060e;
 
@@ -49,6 +50,13 @@ export class PixiRenderer implements Renderer {
   readonly #backgroundSlot = new Container({ label: 'background-slot' });
   readonly #nearSlot = new Container({ label: 'near-slot' });
   readonly #gradeSlot = new Container({ label: 'grade-slot' });
+
+  /**
+   * Кэш текстур частиц. Один на рендерер, а не на модуль: при двойном
+   * монтаже StrictMode первый рендерер уничтожает свой кэш, и общий на модуль
+   * отнял бы текстуры у второго.
+   */
+  readonly #particleTextures = new ParticleTextures();
 
   #current: Scene | null = null;
   #next: Scene | null = null;
@@ -317,6 +325,10 @@ export class PixiRenderer implements Renderer {
       { removeView: false, releaseGlobalResources: true },
       { children: true, texture: true, textureSource: true },
     );
+    // Строго после app.destroy: до него общий шейдер конвейера частиц ещё
+    // держит последнюю текстуру, и её уничтожение было бы уничтожением в
+    // использовании — ровно тем, от чего кэш и заведён.
+    this.#particleTextures.destroy();
 
     this.#app = null;
     this.#world = null;
@@ -327,7 +339,7 @@ export class PixiRenderer implements Renderer {
   }
 
   #createScene(): Scene {
-    const scene = new Scene();
+    const scene = new Scene(this.#particleTextures);
 
     this.#backgroundSlot.addChild(scene.background);
     this.#nearSlot.addChild(scene.near);

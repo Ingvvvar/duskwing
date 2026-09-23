@@ -12,6 +12,7 @@ import { LightningLayer } from './layers/Lightning';
 import { RidgeLayer } from './layers/Ridges';
 import { SkyLayer } from './layers/Sky';
 import { WeatherLayer } from './layers/Weather';
+import type { ParticleTextures } from './textures';
 
 /**
  * Вертикальная раскладка гребней. В ТЗ её нет: дальний гребень выше и мельче,
@@ -38,7 +39,7 @@ export class Scene {
   readonly #ridgeFar = new RidgeLayer('ridge-far');
   readonly #ridgeNear = new RidgeLayer('ridge-near');
   readonly #haze = new HazeLayer();
-  readonly #weather = new WeatherLayer();
+  readonly #weather: WeatherLayer;
   readonly #lightning = new LightningLayer();
   readonly #ground = new GroundLayer();
   readonly #foreground = new ForegroundLayer();
@@ -47,7 +48,9 @@ export class Scene {
   /** В кадре есть телеграф зон: он задаёт снос всему контейнеру частиц. */
   #hasFlow = false;
 
-  constructor() {
+  /** Текстуры частиц общие на все сцены рендерера: на кроссфейде их две. */
+  constructor(particleTextures: ParticleTextures) {
+    this.#weather = new WeatherLayer(particleTextures);
     this.background.addChild(
       this.#sky.view,
       this.#celestial.view,
@@ -122,7 +125,8 @@ export class Scene {
 
   destroy(): void {
     // Процедурные текстуры слои снимают сами: уборка сцены о них не знает,
-    // они не проходят через Assets.
+    // они не проходят через Assets. Исключение — текстуры частиц: ими владеет
+    // рендерер, и сцена их не трогает.
     this.#sky.destroy();
     this.#celestial.destroy();
     this.#ridgeFar.destroy();

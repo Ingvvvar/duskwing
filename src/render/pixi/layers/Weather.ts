@@ -1,11 +1,11 @@
-import { Container, Particle, ParticleContainer, Rectangle, Texture } from 'pixi.js';
+import { Container, Particle, ParticleContainer, Rectangle } from 'pixi.js';
 
 import { GROUND_TOP, WORLD_WIDTH } from '../../../game/constants';
 import { airflowAt } from '../../../game/mechanics';
 import { mulberry32 } from '../../../game/rng';
 import type { LevelConfig, Theme } from '../../../game/types';
 import { particleCounts, PARTICLE_MAX_ALPHA } from '../../particles';
-import { createParticleTexture } from '../textures';
+import type { ParticleTextures } from '../textures';
 
 type Airflow = LevelConfig['mechanics']['airflow'];
 
@@ -80,11 +80,17 @@ interface Mote {
 export class WeatherLayer {
   readonly view = new Container({ label: 'weather' });
 
+  /** Текстуры берутся у рендерера и здесь не уничтожаются: см. `ParticleTextures`. */
+  readonly #textures: ParticleTextures;
+
   #particles: ParticleContainer | null = null;
   #drops: Drop[] = [];
   #motes: Mote[] = [];
   #airflow: Airflow = undefined;
-  #texture: Texture | null = null;
+
+  constructor(textures: ParticleTextures) {
+    this.#textures = textures;
+  }
 
   setTheme(theme: Theme, airflow: Airflow, reducedMotion: boolean): void {
     this.#teardown();
@@ -104,7 +110,7 @@ export class WeatherLayer {
 
     // Текстура одна на контейнер. Когда погоды нет, берём пылинку: телеграф
     // по ТЗ и есть пыль или мелкий сор.
-    const texture = createParticleTexture(drops > 0 ? theme.weather.kind : 'dust');
+    const texture = this.#textures.get(drops > 0 ? theme.weather.kind : 'dust');
     const random = mulberry32(SEED);
     const tint = theme.haze?.color ?? theme.sky[3];
 
@@ -163,7 +169,6 @@ export class WeatherLayer {
 
     this.#particles = container;
     this.#airflow = airflow;
-    this.#texture = texture;
   }
 
   /**
@@ -233,12 +238,11 @@ export class WeatherLayer {
   }
 
   #teardown(): void {
+    // Только контейнер: текстура принадлежит кэшу рендерера и переживает смену темы.
     this.#particles?.destroy({ children: true });
     this.#particles = null;
     this.#drops = [];
     this.#motes = [];
     this.#airflow = undefined;
-    this.#texture?.destroy(true);
-    this.#texture = null;
   }
 }
