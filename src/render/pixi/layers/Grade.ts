@@ -2,6 +2,7 @@ import { ColorMatrixFilter, Sprite, Texture } from 'pixi.js';
 
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../../../game/constants';
 import type { Theme } from '../../../game/types';
+import { vignetteKey } from '../../textureKeys';
 import { createVignetteTexture } from '../textures';
 
 /**
@@ -18,14 +19,23 @@ export class GradeLayer {
   readonly filter = new ColorMatrixFilter();
 
   #texture: Texture | null = null;
+  /** Что построено сейчас: тот же ключ — строить нечего (`textureKeys.ts`). */
+  #key: string | null = null;
 
   setTheme(theme: Theme): void {
-    const texture = createVignetteTexture(theme.grade.vignette);
+    const key = vignetteKey(theme);
 
-    this.#texture?.destroy(true);
-    this.#texture = texture;
-    this.vignette.texture = texture;
-    this.vignette.setSize(WORLD_WIDTH, WORLD_HEIGHT);
+    // Ключом закрыта только текстура виньетки: числа фильтра ниже дешёвые и
+    // ставятся всегда.
+    if (key !== this.#key) {
+      const texture = createVignetteTexture(theme.grade.vignette);
+
+      this.#key = key;
+      this.#texture?.destroy(true);
+      this.#texture = texture;
+      this.vignette.texture = texture;
+      this.vignette.setSize(WORLD_WIDTH, WORLD_HEIGHT);
+    }
 
     // saturate у Pixi принимает не множитель: фактор равен amount * 2/3 + 1,
     // поэтому множитель из темы пересчитывается обратно.
@@ -38,5 +48,6 @@ export class GradeLayer {
   destroy(): void {
     this.#texture?.destroy(true);
     this.#texture = null;
+    this.#key = null;
   }
 }

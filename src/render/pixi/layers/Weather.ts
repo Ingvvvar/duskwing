@@ -1,10 +1,12 @@
-import { Container, Particle, ParticleContainer, Rectangle } from 'pixi.js';
+import { Container, Particle, ParticleContainer, Rectangle, RenderTexture, Texture } from 'pixi.js';
+import type { Renderer } from 'pixi.js';
 
 import { GROUND_TOP, WORLD_WIDTH } from '../../../game/constants';
 import { airflowAt } from '../../../game/mechanics';
 import { mulberry32 } from '../../../game/rng';
 import type { LevelConfig, Theme } from '../../../game/types';
 import { particleCounts, PARTICLE_MAX_ALPHA } from '../../particles';
+import { weatherKey, weatherTint } from '../../textureKeys';
 import type { ParticleTextures } from '../textures';
 
 type Airflow = LevelConfig['mechanics']['airflow'];
@@ -47,6 +49,54 @@ const FLOW_THICKNESS = 1;
 /** Холодный оттенок телеграфа: тот же, что был у полос ветра. */
 const FLOW_TINT = '#9FE8FF';
 
+/**
+ * Динамические свойства контейнера частиц.
+ *
+ * Цвет и вершины динамические только там, где есть телеграф: его частицы
+ * гаснут к границам зон и вытягиваются в след по силе сноса. Без этого ни
+ * спад, ни растяжение не доехали бы до буфера. Одна функция на слой и на
+ * прогрев: прогретый набор обязан совпадать с тем, что рисует слой.
+ */
+function dynamicProperties(hasFlow: boolean): {
+  position: boolean;
+  color: boolean;
+  vertex: boolean;
+} {
+  return { position: true, color: hasFlow, vertex: hasFlow };
+}
+
+/**
+ * Прогрев конвейера частиц: одна отрисовка на загрузке, до первого кадра игры.
+ *
+ * Шейдер частиц у Pixi компилируется при первой отрисовке контейнера, и без
+ * прогрева это случалось посреди игры — на 12-м очке бесконечного режима, где
+ * впервые появляются светлячки: кадр 15–18 мс вместо 4–5.
+ *
+ * Следа не остаётся: рисуется во внеэкранную текстуру 1×1, не на канвас;
+ * контейнер к сцене не подключается и уничтожается сразу; текстура частицы —
+ * встроенная белая Pixi, кэш текстур частиц не трогается. Прогреваются оба
+ * набора свойств, которые рисует слой: одна погода и погода с телеграфом.
+ */
+export function warmUpParticles(renderer: Renderer): void {
+  const target = RenderTexture.create({ width: 1, height: 1 });
+
+  for (const hasFlow of [false, true]) {
+    const container = new ParticleContainer({
+      texture: Texture.WHITE,
+      dynamicProperties: dynamicProperties(hasFlow),
+      blendMode: 'add',
+      particles: [new Particle({ texture: Texture.WHITE })],
+    });
+
+    // Та же ловушка, что в слое: опция `particles` буфер не строит.
+    container.update();
+    renderer.render({ container, target });
+    container.destroy({ children: true });
+  }
+
+  target.destroy(true);
+}
+
 interface Drop {
   readonly particle: Particle;
   readonly fallSpeed: number;
@@ -87,12 +137,23 @@ export class WeatherLayer {
   #drops: Drop[] = [];
   #motes: Mote[] = [];
   #airflow: Airflow = undefined;
+  /** Что построено сейчас: тот же ключ — строить нечего (`textureKeys.ts`). */
+  #key: string | null = null;
 
   constructor(textures: ParticleTextures) {
     this.#textures = textures;
   }
 
   setTheme(theme: Theme, airflow: Airflow, reducedMotion: boolean): void {
+    const key = weatherKey(theme, airflow, reducedMotion);
+
+    // Совпал ключ — контейнер живёт дальше, и частицы продолжают свой путь,
+    // а не возвращаются в исходную раскладку на каждом очке бесконечного режима.
+    if (key === this.#key) {
+      return;
+    }
+
+    this.#key = key;
     this.#teardown();
 
     const hasFlow = airflow !== undefined && airflow.zones > 0 && airflow.strength !== 0;
@@ -112,7 +173,7 @@ export class WeatherLayer {
     // по ТЗ и есть пыль или мелкий сор.
     const texture = this.#textures.get(drops > 0 ? theme.weather.kind : 'dust');
     const random = mulberry32(SEED);
-    const tint = theme.haze?.color ?? theme.sky[3];
+    const tint = weatherTint(theme);
 
     this.#drops = Array.from({ length: drops }, () => {
       const particle = new Particle({
@@ -150,10 +211,7 @@ export class WeatherLayer {
     const container = new ParticleContainer({
       texture,
       boundsArea: new Rectangle(0, 0, WORLD_WIDTH, GROUND_TOP),
-      // Цвет и вершины динамические только там, где есть телеграф: его
-      // частицы гаснут к границам зон и вытягиваются в след по силе сноса.
-      // Без этого ни спад, ни растяжение не доехали бы до буфера.
-      dynamicProperties: { position: true, color: motes > 0, vertex: motes > 0 },
+      dynamicProperties: dynamicProperties(motes > 0),
       // Аддитивное смешивание — требование контракта читаемости.
       blendMode: 'add',
       particles: [...this.#drops, ...this.#motes].map((entry) => entry.particle),
@@ -215,6 +273,7 @@ export class WeatherLayer {
 
   destroy(): void {
     this.#teardown();
+    this.#key = null;
   }
 
   static #wrap(particle: Particle): void {

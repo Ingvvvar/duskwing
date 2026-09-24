@@ -4,6 +4,7 @@ import { MAX_FRAME_MS, STEP_SECONDS, WORLD_HEIGHT, WORLD_WIDTH } from '../../gam
 import type { GameState, LevelConfig, Renderer, Theme } from '../../game/types';
 import { BirdRig } from './entities/Bird';
 import { PipePool } from './entities/Pipes';
+import { warmUpParticles } from './layers/Weather';
 import { Scene } from './Scene';
 import { ParticleTextures } from './textures';
 
@@ -157,6 +158,10 @@ export class PixiRenderer implements Renderer {
     world.mask = frame;
 
     app.stage.addChild(world);
+
+    // До первого кадра игры: компиляция шейдера частиц — на загрузке, а не
+    // посреди забега. Тикер ещё не запущен, канвас не трогается.
+    warmUpParticles(app.renderer);
 
     this.#app = app;
     this.#world = world;

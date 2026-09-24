@@ -3,6 +3,7 @@ import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { WORLD_WIDTH } from '../../../game/constants';
 import { mulberry32 } from '../../../game/rng';
 import type { Theme } from '../../../game/types';
+import { celestialKey } from '../../textureKeys';
 import { createGlowTexture, dimToLuminance } from '../textures';
 
 const DISC_RADIUS = 20;
@@ -38,8 +39,18 @@ export class CelestialLayer {
 
   readonly #span = WORLD_WIDTH + GLOW_RADIUS * 2;
   #textures: Texture[] = [];
+  /** Что построено сейчас: тот же ключ — строить нечего (`textureKeys.ts`). */
+  #key: string | null = null;
 
   setTheme(theme: Theme): void {
+    const key = celestialKey(theme);
+
+    if (key === this.#key) {
+      return;
+    }
+
+    this.#key = key;
+
     // Кэш снимается до пересборки и ставится заново после: запечённая
     // текстура не знает, что тема сменилась, и показывала бы прежнюю.
     // На контейнере фона стоит ColorMatrixFilter грейда — тем важнее, чтобы
@@ -68,6 +79,7 @@ export class CelestialLayer {
   destroy(): void {
     this.view.cacheAsTexture(false);
     this.#destroyTextures();
+    this.#key = null;
   }
 
   #destroyTextures(): void {

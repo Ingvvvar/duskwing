@@ -2,6 +2,7 @@ import { TilingSprite, Texture } from 'pixi.js';
 
 import { GROUND_TOP, WORLD_WIDTH } from '../../../game/constants';
 import type { Theme } from '../../../game/types';
+import { hazeKey } from '../../textureKeys';
 import { createHazeTexture } from '../textures';
 
 /** Контракт читаемости: альфа дымки не выше 0.2. */
@@ -18,22 +19,33 @@ export class HazeLayer {
   });
 
   #texture: Texture | null = null;
+  /** Что построено сейчас: тот же ключ — строить нечего (`textureKeys.ts`). */
+  #key: string | null = null;
 
   setTheme(theme: Theme): void {
-    this.#texture?.destroy(true);
-    this.#texture = null;
+    const key = hazeKey(theme);
+
+    // Пересобирается только текстура, и только при смене цвета. Видимость и
+    // альфа ставятся ниже на каждой смене темы: в бесконечном режиме альфа
+    // дымки растёт с каждым очком, а цвет стоит.
+    if (key !== this.#key) {
+      this.#key = key;
+      this.#texture?.destroy(true);
+      this.#texture = null;
+      this.view.texture = Texture.EMPTY;
+
+      if (theme.haze !== null) {
+        this.#texture = createHazeTexture(theme.haze.color, GROUND_TOP);
+        this.view.texture = this.#texture;
+      }
+    }
 
     if (theme.haze === null) {
       this.view.visible = false;
-      this.view.texture = Texture.EMPTY;
 
       return;
     }
 
-    const texture = createHazeTexture(theme.haze.color, GROUND_TOP);
-
-    this.#texture = texture;
-    this.view.texture = texture;
     this.view.visible = true;
     this.view.alpha = Math.min(theme.haze.alpha, MAX_ALPHA);
   }
@@ -45,5 +57,6 @@ export class HazeLayer {
   destroy(): void {
     this.#texture?.destroy(true);
     this.#texture = null;
+    this.#key = null;
   }
 }
